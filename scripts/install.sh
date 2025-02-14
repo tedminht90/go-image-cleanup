@@ -17,9 +17,33 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# Check if we're in the build directory
+if [ ! -f "${SERVICE_NAME}" ] || [ ! -f "healthcheck.sh" ]; then
+    log "Error: Required files not found. Please run build.sh first"
+    exit 1
+fi
+
+# Check OS
+if [ "$(uname)" != "Linux" ]; then
+    log "Error: This script only supports Linux"
+    exit 1
+fi
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
     log "Please run as root"
+    exit 1
+fi
+
+# Check systemd
+if ! pidof systemd >/dev/null; then
+    log "Error: systemd is not running"
+    exit 1
+fi
+
+# Check crictl
+if ! command -v crictl >/dev/null 2>&1; then
+    log "Error: crictl is not installed"
     exit 1
 fi
 
@@ -28,14 +52,10 @@ log "Creating directories..."
 mkdir -p "$CONFIG_DIR"
 mkdir -p "$LOG_DIR"
 
-# Build the application
-log "Building application..."
-go build -o "$SERVICE_NAME" ./cmd/main.go
-
 # Install binary and scripts
 log "Installing files..."
-mv "$SERVICE_NAME" "$BINARY_PATH"
-cp "scripts/healthcheck.sh" "${BINARY_PATH}-healthcheck"
+cp "${SERVICE_NAME}" "$BINARY_PATH"
+cp "healthcheck.sh" "${BINARY_PATH}-healthcheck"
 chmod +x "$BINARY_PATH"
 chmod +x "${BINARY_PATH}-healthcheck"
 
@@ -59,7 +79,6 @@ LOG_COMPRESS=true      # Compress old log files
 EOF
 
     log "Created default configuration file at $CONFIG_DIR/env"
-    log "Please update it with your actual settings"
 fi
 
 # Create systemd service file
@@ -68,6 +87,7 @@ cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
 [Unit]
 Description=${SERVICE_DESC}
 After=network.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -80,6 +100,7 @@ RestartSec=10
 WorkingDirectory=/usr/local/bin
 StandardOutput=append:${LOG_DIR}/service.log
 StandardError=append:${LOG_DIR}/error.log
+LimitNOFILE=65535
 
 [Install]
 WantedBy=multi-user.target
@@ -125,21 +146,46 @@ chmod 644 "/etc/systemd/system/${SERVICE_NAME}.service"
 chmod 644 "/etc/systemd/system/${SERVICE_NAME}-health.service"
 chmod 644 "/etc/systemd/system/${SERVICE_NAME}-health.timer"
 
+# Verify systemd files
+log "Verifying systemd files..."
+if ! systemd-analyze verify "/etc/systemd/system/${SERVICE_NAME}.service"; then
+    log "Error: Service file verification failed"
+    exit 1
+fi
+
 # Reload systemd
 log "Reloading systemd..."
 systemctl daemon-reload
 
 # Start and enable services
 log "Starting and enabling services..."
-systemctl enable "$SERVICE_NAME"
-systemctl start "$SERVICE_NAME"
-systemctl enable "${SERVICE_NAME}-health.timer"
-systemctl start "${SERVICE_NAME}-health.timer"
+systemctl enable "$SERVICE_NAME" || { log "Error enabling service"; exit 1; }
+systemctl start "$SERVICE_NAME" || { log "Error starting service"; exit 1; }
+systemctl enable "${SERVICE_NAME}-health.timer" || { log "Error enabling health timer"; exit 1; }
+systemctl start "${SERVICE_NAME}-health.timer" || { log "Error starting health timer"; exit 1; }
 
-# Display status
-log "Installation completed. Service status:"
-systemctl status "$SERVICE_NAME"
-systemctl status "${SERVICE_NAME}-health.timer"
+# Verify service is running
+log "Verifying service status..."
+if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+    log "Error: Service failed to start"
+    journalctl -u "$SERVICE_NAME" --no-pager -n 50
+    exit 1
+fi
 
-log "Please update the configuration file at ${CONFIG_DIR}/env with your settings"
-log "You can view logs at ${LOG_DIR}"
+# Display version information
+if [ -f "version.txt" ]; then
+    log "Installing version:"
+    cat "version.txt"
+fi
+
+# Display status and final instructions
+log "Installation completed successfully!"
+log "Service status:"
+systemctl status "$SERVICE_NAME" --no-pager
+systemctl status "${SERVICE_NAME}-health.timer" --no-pager
+
+log "Important next steps:"
+log "1. Update configuration at: ${CONFIG_DIR}/env"
+log "2. Verify logs at: ${LOG_DIR}"
+log "3. Check service health: curl http://localhost:8080/health"
+log "4. View logs: journalctl -u ${SERVICE_NAME} -f"

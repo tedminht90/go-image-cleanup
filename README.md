@@ -5,13 +5,13 @@ Automated service for cleaning up unused container images with Telegram notifica
 ## Features
 
 - Automated cleanup of unused container images
-- Telegram notifications with cleanup results and host info
+- Telegram notifications with cleanup results and host info (ICT+7 timezone)
 - Health monitoring with auto-recovery
 - Prometheus metrics endpoint
 - Systemd service integration
 - Parallel processing with worker pool
 - Comprehensive logging with automatic rotation
-- ICT+7 timezone support
+- Static binary build for Linux
 
 ## Prerequisites
 
@@ -21,16 +21,39 @@ Automated service for cleaning up unused container images with Telegram notifica
 - crictl installed and configured
 - Telegram bot token and chat ID
 
-## Installation
+## Building
 
-1. Clone the repository:
+### Development Build
 
 ```bash
-git clone <repository-url>
-cd image-cleanup
+# Build the application
+make build
+
+# Run tests
+make test
+
+# Clean build artifacts
+make clean
 ```
 
-2. Build and install:
+### Build Artifacts
+
+After a successful build, the following files will be created in the `build/` directory:
+
+- `image-cleanup`: Main service binary
+- `healthcheck.sh`: Health check script
+- `install.sh`: Installation script
+- `version.txt`: Build version information
+
+## Installation
+
+1. Build the application:
+
+```bash
+make build
+```
+
+2. Install the service:
 
 ```bash
 make install
@@ -72,59 +95,29 @@ make start
 ### Basic Commands
 
 ```bash
-make start       # Start the service
-make stop        # Stop the service
-make restart     # Restart the service
-make status      # Check service status
-make check       # Check service health
-make enable      # Enable service autostart
-make disable     # Disable service autostart
+make start         # Start the service
+make stop          # Stop the service
+make restart       # Restart the service
+make status        # Check service status
+make check         # Check service health
+make enable        # Enable service autostart
+make disable       # Disable service autostart
 ```
 
 ### Logs
 
 ```bash
-make logs        # View service logs
-make error-logs  # View error logs
-make health-logs # View health check logs
+make logs          # View service logs
+make error-logs    # View error logs
+make health-logs   # View health check logs
 ```
 
 ### Configuration
 
 ```bash
-make edit-config  # Edit configuration
-make show-config  # Show current configuration
-```
-
-## Development
-
-### Build and Test
-
-```bash
-make build      # Build binary
-make test       # Run tests with coverage
-make clean      # Clean build artifacts
-```
-
-### Directory Structure
-
-```
-.
-├── cmd/                # Main application
-├── config/            # Configuration handling
-├── internal/
-│   ├── domain/        # Business logic interfaces
-│   │   ├── models/    # Domain models
-│   │   ├── notification/ # Notification interface
-│   │   └── repositories/ # Repository interfaces
-│   ├── infrastructure/# External services implementation
-│   │   ├── container/ # Container runtime implementation
-│   │   ├── logger/    # Logging implementation
-│   │   └── notification/ # Notification implementation
-│   ├── interfaces/    # HTTP handlers
-│   └── usecases/      # Business logic implementation
-├── scripts/           # Installation and maintenance scripts
-└── Makefile          # Build and management commands
+make edit-config   # Edit configuration
+make show-config   # Show current configuration
+make version       # Show build version
 ```
 
 ## Monitoring
@@ -134,7 +127,6 @@ make clean      # Clean build artifacts
 - Endpoint: `http://localhost:8080/health`
 - Automatic check every 5 minutes
 - Auto-restart on failure
-- Health status logging
 
 ### Metrics
 
@@ -146,89 +138,35 @@ Prometheus metrics include:
 - Cleanup duration
 - Error counts
 - Last run timestamp
-- Number of images skipped
 - Worker pool statistics
 
 ## Log Management
 
 ### Log Files
 
-- Service logs: `/var/log/image-cleanup/service.log`
-- Error logs: `/var/log/image-cleanup/error.log`
-- Health check logs: `/var/log/image-cleanup/health.log`
+All logs are automatically rotated based on size and age:
 
-### Log Rotation
-
-- Automatic rotation based on file size
-- Compression of old log files
-- Age-based cleanup
-- Backup retention management
+```bash
+/var/log/image-cleanup/
+├── service.log        # Main service logs
+├── error.log         # Error logs
+└── health.log        # Health check logs
+```
 
 ### Log Configuration
 
-- `LOG_LEVEL`: Set logging detail level (debug, info, warn, error)
-- `LOG_MAX_SIZE`: Maximum size in MB before rotating (default: 100MB)
-- `LOG_MAX_BACKUPS`: Number of old log files to keep (default: 5)
-- `LOG_MAX_AGE`: Days to keep old log files (default: 30)
-- `LOG_COMPRESS`: Whether to compress old log files (default: true)
-
-### Viewing Logs
-
-```bash
-# View active logs
-make logs
-
-# View specific log files
-tail -f /var/log/image-cleanup/service.log
-tail -f /var/log/image-cleanup/error.log
-
-# List rotated log files
-ls -l /var/log/image-cleanup/
-```
-
-## Notification Format
-
-Notifications sent to Telegram include:
-
-- Host information (hostname and IPs)
-- Start time (ICT+7)
-- End time (ICT+7)
-- Duration
-- Total images processed
-- Number of images removed
-- Number of images skipped
-
-Example:
-
-```
-Image cleanup completed on:
-Host: server-name
-IP(s): 192.168.1.100, 10.0.0.50
-
-Started: 2025-02-14 14:30:00 ICT
-Finished: 2025-02-14 14:31:05 ICT
-Duration: 1m5s
-
-Results:
-- Total: 10
-- Removed: 5
-- Skipped: 5
-```
+- Size-based rotation: Files are rotated when they reach MAX_SIZE
+- Age-based cleanup: Files older than MAX_AGE days are removed
+- Compression: Old log files are automatically compressed
+- Backup management: Keeps up to MAX_BACKUPS old files
 
 ## Uninstallation
 
-To remove the service:
+Remove the service:
 
 ```bash
 make uninstall
 ```
-
-The uninstall process will:
-
-1. Stop all services
-2. Remove systemd service files
-3. Remove binaries
-4. Optionally remove configuration and log files
 
 ## Contributing
 
@@ -237,6 +175,60 @@ The uninstall process will:
 3. Commit your changes
 4. Push to the branch
 5. Create a Pull Request
+
+## Development
+
+### Project Structure
+
+```
+.
+├── cmd/                # Main application
+├── config/             # Configuration handling
+├── internal/
+│   ├── domain/         # Business logic interfaces
+│   ├── infrastructure/ # External services implementation
+│   ├── interfaces/     # HTTP handlers
+│   └── usecases/       # Business logic implementation
+├── scripts/            # Build and installation scripts
+├── build/              # Build artifacts
+└── Makefile           # Build and management commands
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+make test
+
+# Run specific tests
+go test ./internal/usecases/cleanup/...
+```
+
+## Troubleshooting
+
+1. View service status:
+
+```bash
+make status
+```
+
+2. Check service logs:
+
+```bash
+make logs
+```
+
+3. Verify health endpoint:
+
+```bash
+make check
+```
+
+4. Common issues:
+
+- Permission denied: Make sure to run installation as root
+- Service won't start: Check error logs with `make error-logs`
+- Health check fails: Verify port 8080 is available
 
 ## License
 
