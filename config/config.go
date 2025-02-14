@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"go-image-cleanup/internal/infrastructure/logger"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -16,6 +17,35 @@ type Config struct {
 
 	// Logger config
 	Logger logger.Config
+}
+
+// String returns a formatted string of configuration (excluding sensitive data)
+func (c *Config) String() string {
+	var sb strings.Builder
+	sb.WriteString("\nConfiguration:\n")
+	sb.WriteString("----------------\n")
+	// Hide sensitive information
+	sb.WriteString(fmt.Sprintf("TELEGRAM_BOT_TOKEN: %s\n", maskString(c.TelegramBotToken)))
+	sb.WriteString(fmt.Sprintf("TELEGRAM_CHAT_ID: %s\n", maskString(c.TelegramChatID)))
+	sb.WriteString(fmt.Sprintf("CLEANUP_SCHEDULE: %s\n", c.CleanupSchedule))
+	sb.WriteString(fmt.Sprintf("HTTP_PORT: %s\n", c.HTTPPort))
+	sb.WriteString("\nLogger Configuration:\n")
+	sb.WriteString("--------------------\n")
+	sb.WriteString(fmt.Sprintf("LOG_LEVEL: %s\n", c.Logger.Level))
+	sb.WriteString(fmt.Sprintf("LOG_DIR: %s\n", c.Logger.LogDir))
+	sb.WriteString(fmt.Sprintf("LOG_MAX_SIZE: %d MB\n", c.Logger.MaxSize))
+	sb.WriteString(fmt.Sprintf("LOG_MAX_BACKUPS: %d files\n", c.Logger.MaxBackups))
+	sb.WriteString(fmt.Sprintf("LOG_MAX_AGE: %d days\n", c.Logger.MaxAge))
+	sb.WriteString(fmt.Sprintf("LOG_COMPRESS: %v\n", c.Logger.Compress))
+	return sb.String()
+}
+
+// maskString masks sensitive information
+func maskString(s string) string {
+	if len(s) <= 8 {
+		return "********"
+	}
+	return s[:4] + "..." + s[len(s)-4:]
 }
 
 func LoadConfig() (*Config, error) {
@@ -36,8 +66,12 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("LOG_COMPRESS", true)
 
 	// Read config file
-	if err := viper.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("error reading config file: %v", err)
+	err := viper.ReadInConfig()
+	if err != nil {
+		fmt.Printf("Error reading config file: %v\n", err)
+		fmt.Println("Using environment variables and defaults")
+	} else {
+		fmt.Printf("Using config file: %s\n", viper.ConfigFileUsed())
 	}
 
 	// Create config structure
@@ -55,6 +89,9 @@ func LoadConfig() (*Config, error) {
 			Compress:   viper.GetBool("LOG_COMPRESS"),
 		},
 	}
+
+	// Print current configuration
+	fmt.Println(config.String())
 
 	return config, nil
 }

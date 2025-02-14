@@ -31,6 +31,14 @@ var (
 	BuildTime = "unknown"
 )
 
+// maskValue masks sensitive information
+func maskValue(value string) string {
+	if len(value) <= 8 {
+		return "********"
+	}
+	return value[:4] + "..." + value[len(value)-4:]
+}
+
 func validateConfig(cfg *config.Config) error {
 	if cfg.TelegramBotToken == "" {
 		return fmt.Errorf("TELEGRAM_BOT_TOKEN is required")
@@ -82,6 +90,21 @@ func main() {
 		zap.String("version", Version),
 		zap.String("buildTime", BuildTime))
 
+	// Log configuration
+	log.Info("Configuration loaded",
+		zap.String("telegram_bot_token", maskValue(cfg.TelegramBotToken)),
+		zap.String("telegram_chat_id", maskValue(cfg.TelegramChatID)),
+		zap.String("cleanup_schedule", cfg.CleanupSchedule),
+		zap.String("http_port", cfg.HTTPPort))
+
+	log.Info("Logger configuration",
+		zap.String("log_level", cfg.Logger.Level),
+		zap.String("log_dir", cfg.Logger.LogDir),
+		zap.Int("log_max_size", cfg.Logger.MaxSize),
+		zap.Int("log_max_backups", cfg.Logger.MaxBackups),
+		zap.Int("log_max_age", cfg.Logger.MaxAge),
+		zap.Bool("log_compress", cfg.Logger.Compress))
+
 	// Initialize dependencies
 	repo := container.NewCrictlRepository(log)
 	notifier := notification.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID, log)
@@ -116,22 +139,16 @@ func main() {
 	c.Start()
 	log.Info("Cron scheduler started", zap.String("schedule", cfg.CleanupSchedule))
 
-	// Initialize Fiber app with custom config
+	// Initialize Fiber app
 	app := fiber.New(fiber.Config{
 		AppName:               "Image Cleanup Service",
 		DisableStartupMessage: true,
 		IdleTimeout:           5 * time.Second,
 		ReadTimeout:           10 * time.Second,
 		WriteTimeout:          10 * time.Second,
-		ErrorHandler: func(c *fiber.Ctx, err error) error {
-			log.Error("HTTP error", zap.Error(err))
-			return c.Status(500).JSON(fiber.Map{
-				"error": "Internal Server Error",
-			})
-		},
 	})
 
-	// Add middleware
+	// Add middleware for panic recovery
 	app.Use(recover.New(recover.Config{
 		EnableStackTrace: true,
 		StackTraceHandler: func(c *fiber.Ctx, e interface{}) {
@@ -144,6 +161,23 @@ func main() {
 			})
 		},
 	}))
+
+	// Add custom error handler
+	app.Use(func(c *fiber.Ctx) error {
+		err := c.Next()
+		if err != nil {
+			log.Error("Request failed",
+				zap.Error(err),
+				zap.String("url", c.Path()),
+				zap.String("method", c.Method()))
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Internal Server Error",
+			})
+		}
+		return nil
+	})
+
+	// Add logger middleware
 	app.Use(fiberLogger.New(fiberLogger.Config{
 		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
 	}))
