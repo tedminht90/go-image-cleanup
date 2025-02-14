@@ -43,12 +43,23 @@ chmod +x "${BINARY_PATH}-healthcheck"
 if [ ! -f "$CONFIG_DIR/env" ]; then
     log "Creating default config file..."
     cat > "$CONFIG_DIR/env" << EOF
+# Service configuration
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 CLEANUP_SCHEDULE="0 0 * * *"
-LOG_LEVEL=info
 HTTP_PORT=8080
+
+# Logger configuration
+LOG_LEVEL=info
+LOG_DIR=/var/log/image-cleanup
+LOG_MAX_SIZE=100       # Maximum size of each log file in megabytes
+LOG_MAX_BACKUPS=5      # Number of old log files to keep
+LOG_MAX_AGE=30         # Days to keep old log files
+LOG_COMPRESS=true      # Compress old log files
 EOF
+
+    log "Created default configuration file at $CONFIG_DIR/env"
+    log "Please update it with your actual settings"
 fi
 
 # Create systemd service file
