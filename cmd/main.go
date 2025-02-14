@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -24,106 +25,174 @@ import (
 	"go.uber.org/zap"
 )
 
+// Version and BuildTime are set during build
+var (
+	Version   = "dev"
+	BuildTime = "unknown"
+)
+
+func validateConfig(cfg *config.Config) error {
+	if cfg.TelegramBotToken == "" {
+		return fmt.Errorf("TELEGRAM_BOT_TOKEN is required")
+	}
+	if cfg.TelegramChatID == "" {
+		return fmt.Errorf("TELEGRAM_CHAT_ID is required")
+	}
+	if cfg.CleanupSchedule == "" {
+		return fmt.Errorf("CLEANUP_SCHEDULE is required")
+	}
+	// Validate cron expression
+	if _, err := cron.ParseStandard(cfg.CleanupSchedule); err != nil {
+		return fmt.Errorf("invalid CLEANUP_SCHEDULE: %v", err)
+	}
+	// Validate port
+	if port, err := strconv.Atoi(cfg.HTTPPort); err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("invalid HTTP_PORT: must be between 1 and 65535")
+	}
+	return nil
+}
+
 func main() {
-    // Load configuration
-    cfg, err := config.LoadConfig()
-    if err != nil {
-        panic(fmt.Sprintf("Failed to load config: %v", err))
-    }
+	// Print version info
+	fmt.Printf("Image Cleanup Service %s (built at %s)\n", Version, BuildTime)
 
-    // Initialize logger with rotation config
-    log, err := loggerPkg.NewLogger(cfg.Logger)
-    if err != nil {
-        panic(fmt.Sprintf("Failed to initialize logger: %v", err))
-    }
-    defer log.Sync()
+	// Load configuration
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fmt.Printf("Failed to load config: %v\n", err)
+		os.Exit(1)
+	}
 
-    // Initialize dependencies
-    repo := container.NewCrictlRepository(log)
-    notifier := notification.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID, log)
-    cleanupService := cleanup.NewCleanupService(repo, notifier, log)
-    healthHandler := handlers.NewHealthHandler(log)
+	// Validate configuration
+	if err := validateConfig(cfg); err != nil {
+		fmt.Printf("Invalid configuration: %v\n", err)
+		os.Exit(1)
+	}
 
-    // Context for cleanup jobs
-    cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
-    defer cleanupCancel()
+	// Initialize logger
+	log, err := loggerPkg.NewLogger(cfg.Logger)
+	if err != nil {
+		fmt.Printf("Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer log.Sync()
 
-    // Initialize cron job
-    c := cron.New(cron.WithChain(
-        cron.SkipIfStillRunning(cron.DefaultLogger),
-    ))
-    
-    _, err = c.AddFunc(cfg.CleanupSchedule, func() {
-        // Create a new context with timeout for each job run
-        jobCtx, cancel := context.WithTimeout(cleanupCtx, 30*time.Minute)
-        defer cancel()
+	// Log startup information
+	log.Info("Starting Image Cleanup Service",
+		zap.String("version", Version),
+		zap.String("buildTime", BuildTime))
 
-        if err := cleanupService.Cleanup(jobCtx); err != nil {
-            log.Error("Cleanup job failed", zap.Error(err))
-        }
-    })
-    if err != nil {
-        log.Fatal("Failed to schedule cleanup job", zap.Error(err))
-    }
-    c.Start()
+	// Initialize dependencies
+	repo := container.NewCrictlRepository(log)
+	notifier := notification.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID, log)
+	cleanupService := cleanup.NewCleanupService(repo, notifier, log)
+	healthHandler := handlers.NewHealthHandler(log)
 
-    // Initialize Fiber app
-    app := fiber.New(fiber.Config{
-        AppName:               "Image Cleanup Service",
-        DisableStartupMessage: true,
-    })
+	// Context for cleanup jobs
+	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
+	defer cleanupCancel()
 
-    // Add middleware
-    app.Use(recover.New())
-    app.Use(fiberLogger.New(fiberLogger.Config{
-        Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
-    }))
+	// Initialize cron job with error handling
+	c := cron.New(cron.WithChain(
+		cron.SkipIfStillRunning(cron.DefaultLogger),
+		cron.Recover(cron.DefaultLogger),
+	))
 
-    // Register routes
-    app.Get("/health", healthHandler.Status)
-    app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
+	_, err = c.AddFunc(cfg.CleanupSchedule, func() {
+		jobCtx, cancel := context.WithTimeout(cleanupCtx, 30*time.Minute)
+		defer cancel()
 
-    // Graceful shutdown setup
-    quit := make(chan os.Signal, 1)
-    signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+		if err := cleanupService.Cleanup(jobCtx); err != nil {
+			log.Error("Cleanup job failed",
+				zap.Error(err),
+				zap.String("schedule", cfg.CleanupSchedule))
+		}
+	})
+	if err != nil {
+		log.Fatal("Failed to schedule cleanup job", zap.Error(err))
+	}
 
-    // Start server in a goroutine
-    serverErr := make(chan error, 1)
-    go func() {
-        if err := app.Listen(":" + cfg.HTTPPort); err != nil {
-            log.Error("Server error", zap.Error(err))
-            serverErr <- err
-        }
-    }()
+	// Start cron scheduler
+	c.Start()
+	log.Info("Cron scheduler started", zap.String("schedule", cfg.CleanupSchedule))
 
-    log.Info("Server started",
-        zap.String("port", cfg.HTTPPort),
-        zap.String("cleanup_schedule", cfg.CleanupSchedule),
-        zap.String("log_level", cfg.Logger.Level),
-        zap.String("log_dir", cfg.Logger.LogDir))
+	// Initialize Fiber app with custom config
+	app := fiber.New(fiber.Config{
+		AppName:               "Image Cleanup Service",
+		DisableStartupMessage: true,
+		IdleTimeout:           5 * time.Second,
+		ReadTimeout:           10 * time.Second,
+		WriteTimeout:          10 * time.Second,
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			log.Error("HTTP error", zap.Error(err))
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Internal Server Error",
+			})
+		},
+	})
 
-    // Wait for interrupt signal or server error
-    select {
-    case <-quit:
-        log.Info("Shutting down server...")
-    case err := <-serverErr:
-        log.Error("Server error occurred", zap.Error(err))
-    }
+	// Add middleware
+	app.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+		StackTraceHandler: func(c *fiber.Ctx, e interface{}) {
+			log.Error("Panic recovered",
+				zap.Any("error", e),
+				zap.String("url", c.Path()),
+				zap.String("method", c.Method()))
+			c.Status(500).JSON(fiber.Map{
+				"error": "Internal Server Error",
+			})
+		},
+	}))
+	app.Use(fiberLogger.New(fiberLogger.Config{
+		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
+	}))
 
-    // Cancel any running cleanup jobs
-    cleanupCancel()
+	// Register routes
+	app.Get("/health", healthHandler.Status)
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
+	app.Get("/version", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"version":   Version,
+			"buildTime": BuildTime,
+		})
+	})
 
-    // Gracefully shutdown server
-    shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer shutdownCancel()
+	// Graceful shutdown setup
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
-    if err := app.ShutdownWithContext(shutdownCtx); err != nil {
-        log.Error("Server forced to shutdown", zap.Error(err))
-    }
+	// Start server in a goroutine
+	serverErr := make(chan error, 1)
+	go func() {
+		log.Info("Starting HTTP server", zap.String("port", cfg.HTTPPort))
+		if err := app.Listen(":" + cfg.HTTPPort); err != nil {
+			log.Error("Server error", zap.Error(err))
+			serverErr <- err
+		}
+	}()
 
-    // Stop cron jobs
-    c.Stop()
+	// Wait for interrupt signal or server error
+	select {
+	case <-quit:
+		log.Info("Shutting down server...")
+	case err := <-serverErr:
+		log.Error("Server error occurred", zap.Error(err))
+	}
 
-    log.Info("Server exited",
-        zap.String("log_dir", cfg.Logger.LogDir))
+	// Cancel any running cleanup jobs
+	log.Info("Stopping cleanup jobs...")
+	cleanupCancel()
+	c.Stop()
+
+	// Gracefully shutdown server
+	log.Info("Shutting down HTTP server...")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+
+	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
+		log.Error("Server forced to shutdown", zap.Error(err))
+	}
+
+	log.Info("Service stopped successfully")
 }
