@@ -47,6 +47,17 @@ if ! command -v crictl >/dev/null 2>&1; then
     exit 1
 fi
 
+# Stop existing services if running
+log "Stopping existing services if running..."
+systemctl stop "${SERVICE_NAME}" >/dev/null 2>&1 || true
+systemctl stop "${SERVICE_NAME}-health.timer" >/dev/null 2>&1 || true
+systemctl disable "${SERVICE_NAME}" >/dev/null 2>&1 || true
+systemctl disable "${SERVICE_NAME}-health.timer" >/dev/null 2>&1 || true
+
+# Wait for processes to stop
+log "Waiting for processes to stop..."
+sleep 2
+
 # Create directories
 log "Creating directories..."
 mkdir -p "$CONFIG_DIR"
@@ -160,9 +171,9 @@ systemctl daemon-reload
 # Start and enable services
 log "Starting and enabling services..."
 systemctl enable "$SERVICE_NAME" || { log "Error enabling service"; exit 1; }
-systemctl start "$SERVICE_NAME" || { log "Error starting service"; exit 1; }
+systemctl restart "$SERVICE_NAME" || { log "Error starting service"; exit 1; }
 systemctl enable "${SERVICE_NAME}-health.timer" || { log "Error enabling health timer"; exit 1; }
-systemctl start "${SERVICE_NAME}-health.timer" || { log "Error starting health timer"; exit 1; }
+systemctl restart "${SERVICE_NAME}-health.timer" || { log "Error starting health timer"; exit 1; }
 
 # Verify service is running
 log "Verifying service status..."

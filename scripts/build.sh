@@ -38,7 +38,9 @@ log "Building application..."
 export CGO_ENABLED=0  # Disable CGO for static binary
 export GOOS=linux    # Ensure we're building for Linux
 COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+
+# Get build time in ICT timezone
+BUILD_TIME=$(TZ=Asia/Bangkok date '+%Y-%m-%d_%H:%M:%S_ICT')
 
 go build -o "${OUTPUT_DIR}/${SERVICE_NAME}" \
     -ldflags "-X main.Version=$COMMIT_HASH -X main.BuildTime=$BUILD_TIME" \
@@ -72,8 +74,9 @@ cp scripts/install.sh "${OUTPUT_DIR}/"
 chmod +x "${OUTPUT_DIR}/healthcheck.sh"
 chmod +x "${OUTPUT_DIR}/install.sh"
 
-# Create version file
-echo "${COMMIT_HASH} - ${BUILD_TIME}" > "${OUTPUT_DIR}/version.txt"
+# Create version file with ICT time
+echo "Version: ${COMMIT_HASH}" > "${OUTPUT_DIR}/version.txt"
+echo "Build Time: ${BUILD_TIME}" >> "${OUTPUT_DIR}/version.txt"
 
 log "Build completed successfully!"
 log "Build outputs are in: $OUTPUT_DIR"
