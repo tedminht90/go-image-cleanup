@@ -4,7 +4,6 @@ package config
 import (
 	"fmt"
 	"go-image-cleanup/internal/infrastructure/logger"
-	"os"
 
 	"github.com/spf13/viper"
 )
@@ -20,26 +19,8 @@ type Config struct {
 }
 
 func LoadConfig() (*Config, error) {
-	// Try to find config file in multiple locations
-	configPaths := []string{
-		"/etc/image-cleanup/env", // System config
-		"./config/.env",          // Local development
-		"./.env",                 // Project root
-	}
-
-	var configFile string
-	for _, path := range configPaths {
-		if _, err := os.Stat(path); err == nil {
-			configFile = path
-			break
-		}
-	}
-
-	if configFile != "" {
-		viper.SetConfigFile(configFile)
-	}
-
-	// Enable environment variables
+	// Set default config path
+	viper.SetConfigFile("/etc/image-cleanup/.env")
 	viper.AutomaticEnv()
 
 	// Set defaults
@@ -54,14 +35,9 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("LOG_MAX_AGE", 30)    // 30 days
 	viper.SetDefault("LOG_COMPRESS", true)
 
-	// Try to read config file if it exists
-	if configFile != "" {
-		if err := viper.ReadInConfig(); err != nil {
-			return nil, fmt.Errorf("error reading config file: %w", err)
-		}
-		fmt.Printf("Using config file: %s\n", configFile)
-	} else {
-		fmt.Println("No config file found, using environment variables and defaults")
+	// Read config file
+	if err := viper.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("error reading config file: %v", err)
 	}
 
 	// Create config structure

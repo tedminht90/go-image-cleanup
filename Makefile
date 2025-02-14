@@ -29,7 +29,7 @@ clean:
 	@echo "Clean completed"
 
 # Install service (requires root)
-install: 
+install:
 	@echo "Installing service..."
 	@cd $(BUILD_DIR) && sudo ./install.sh
 
@@ -77,10 +77,10 @@ health-logs:
 
 # Configuration commands
 edit-config:
-	@sudo vim $(CONFIG_DIR)/env
+	@sudo vim $(CONFIG_DIR)/.env
 
 show-config:
-	@sudo cat $(CONFIG_DIR)/env
+	@sudo cat $(CONFIG_DIR)/.env
 
 version:
 	@if [ -f "$(BUILD_DIR)/version.txt" ]; then \
