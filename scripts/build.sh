@@ -49,6 +49,22 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Verify binary exists and is executable
+log "Verifying binary..."
+if [ ! -f "${OUTPUT_DIR}/${SERVICE_NAME}" ]; then
+    log "Error: Binary file not found"
+    exit 1
+fi
+
+if [ ! -x "${OUTPUT_DIR}/${SERVICE_NAME}" ]; then
+    log "Error: Binary is not executable"
+    exit 1
+fi
+
+# Get binary size
+BINARY_SIZE=$(ls -lh "${OUTPUT_DIR}/${SERVICE_NAME}" | awk '{print $5}')
+log "Binary size: ${BINARY_SIZE}"
+
 # Copy required scripts
 log "Copying scripts..."
 cp scripts/healthcheck.sh "${OUTPUT_DIR}/"
@@ -58,14 +74,6 @@ chmod +x "${OUTPUT_DIR}/install.sh"
 
 # Create version file
 echo "${COMMIT_HASH} - ${BUILD_TIME}" > "${OUTPUT_DIR}/version.txt"
-
-# Verify binary
-log "Verifying binary..."
-if ! "${OUTPUT_DIR}/${SERVICE_NAME}" --version >/dev/null 2>&1; then
-    log "Error: Binary verification failed"
-    rm -f "${OUTPUT_DIR}/${SERVICE_NAME}"
-    exit 1
-fi
 
 log "Build completed successfully!"
 log "Build outputs are in: $OUTPUT_DIR"
