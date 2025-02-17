@@ -182,16 +182,34 @@ make uninstall
 
 ```
 .
-├── cmd/                # Main application
-├── config/             # Configuration handling
-├── internal/
-│   ├── domain/         # Business logic interfaces
-│   ├── infrastructure/ # External services implementation
-│   ├── interfaces/     # HTTP handlers
-│   └── usecases/       # Business logic implementation
-├── scripts/            # Build and installation scripts
-├── build/              # Build artifacts
-└── Makefile           # Build and management commands
+├── cmd/                        # Main application
+├── config/                      # Configuration handling
+├── internal/                   # Private application code
+│   ├── domain/                 # Business logic interfaces
+│   │   ├── models/             # Domain models
+│   │   ├── notification/        # Notification interface
+│   │   └── repositories/       # Repository interfaces
+│   ├── infrastructure/         # External services implementation
+│   │   ├── container/          # Container runtime implementation
+│   │   ├── logger/             # Logging implementation
+│   │   ├── metrics/            # Metrics collection (Prometheus)
+│   │   └── notification/        # Notification implementation
+│   ├── interfaces/             # Interface adapters
+│   │   └── http/               # HTTP layer
+│   │       ├── handlers/       # HTTP handlers
+│   │       ├── middleware/     # HTTP middleware
+│   │       └── router/         # Router setup
+│   └── usecases/               # Application business rules
+│       └── cleanup/            # Image cleanup implementation
+├── pkg/                        # Public shared code
+│   ├── helper/                 # Helper functions
+│   └── constants/              # Global constants
+├── scripts/                    # Build and installation scripts
+├── build/                      # Build artifacts
+├── Makefile                     # Build and management commands
+├── go.mod                      # Go module definition
+├── go.sum                      # Go module checksums
+└── README.md                   # Project documentation
 ```
 
 ### Running Tests

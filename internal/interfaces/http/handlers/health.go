@@ -6,15 +6,18 @@ import (
 )
 
 type HealthHandler struct {
-    logger *zap.Logger
+	logger *zap.Logger
 }
 
 func NewHealthHandler(logger *zap.Logger) *HealthHandler {
-    return &HealthHandler{logger: logger}
+	return &HealthHandler{
+		logger: logger,
+	}
 }
 
 func (h *HealthHandler) Status(c *fiber.Ctx) error {
-    return c.JSON(fiber.Map{
-        "status": "healthy",
-    })
+	h.logger.Debug("Health check requested")
+	return c.JSON(fiber.Map{
+		"status": "healthy",
+	})
 }
