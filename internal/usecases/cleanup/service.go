@@ -4,10 +4,10 @@ package cleanup
 import (
 	"context"
 	"fmt"
+	"go-image-cleanup/internal/domain/metrics"
 	"go-image-cleanup/internal/domain/models"
 	"go-image-cleanup/internal/domain/notification"
 	"go-image-cleanup/internal/domain/repositories"
-	"go-image-cleanup/internal/infrastructure/metrics"
 	"go-image-cleanup/pkg/helper"
 	"net"
 	"os"

@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"go-image-cleanup/internal/infrastructure/logger"
+	"go-image-cleanup/pkg/helper"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -25,8 +26,8 @@ func (c *Config) String() string {
 	sb.WriteString("\nConfiguration:\n")
 	sb.WriteString("----------------\n")
 	// Hide sensitive information
-	sb.WriteString(fmt.Sprintf("TELEGRAM_BOT_TOKEN: %s\n", maskString(c.TelegramBotToken)))
-	sb.WriteString(fmt.Sprintf("TELEGRAM_CHAT_ID: %s\n", maskString(c.TelegramChatID)))
+	sb.WriteString(fmt.Sprintf("TELEGRAM_BOT_TOKEN: %s\n", helper.MaskValue(c.TelegramBotToken)))
+	sb.WriteString(fmt.Sprintf("TELEGRAM_CHAT_ID: %s\n", helper.MaskValue(c.TelegramChatID)))
 	sb.WriteString(fmt.Sprintf("CLEANUP_SCHEDULE: %s\n", c.CleanupSchedule))
 	sb.WriteString(fmt.Sprintf("HTTP_PORT: %s\n", c.HTTPPort))
 	sb.WriteString("\nLogger Configuration:\n")
@@ -38,14 +39,6 @@ func (c *Config) String() string {
 	sb.WriteString(fmt.Sprintf("LOG_MAX_AGE: %d days\n", c.Logger.MaxAge))
 	sb.WriteString(fmt.Sprintf("LOG_COMPRESS: %v\n", c.Logger.Compress))
 	return sb.String()
-}
-
-// maskString masks sensitive information
-func maskString(s string) string {
-	if len(s) <= 8 {
-		return "********"
-	}
-	return s[:4] + "..." + s[len(s)-4:]
 }
 
 func LoadConfig() (*Config, error) {
