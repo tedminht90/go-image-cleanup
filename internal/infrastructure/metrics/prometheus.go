@@ -1,41 +1,54 @@
-// internal/infrastructure/metrics/prometheus.go
 package metrics
 
 import (
+	"os"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 type PrometheusMetrics struct {
-	ImagesRemoved   prometheus.Counter
-	ImagesSkipped   prometheus.Counter
-	CleanupDuration prometheus.Histogram
-	LastCleanupTime prometheus.Gauge
-	CleanupErrors   prometheus.Counter
+	ImagesRemoved   *prometheus.CounterVec
+	ImagesSkipped   *prometheus.CounterVec
+	CleanupDuration *prometheus.HistogramVec
+	LastCleanupTime *prometheus.GaugeVec
+	CleanupErrors   *prometheus.CounterVec
+	hostname        string
 }
 
 func NewPrometheusMetrics() *PrometheusMetrics {
+	// Get hostname for labels
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown"
+	}
+
 	return &PrometheusMetrics{
-		ImagesRemoved: promauto.NewCounter(prometheus.CounterOpts{
+		ImagesRemoved: promauto.NewCounterVec(prometheus.CounterOpts{
 			Name: "image_cleanup_removed_total",
 			Help: "The total number of images removed",
-		}),
-		ImagesSkipped: promauto.NewCounter(prometheus.CounterOpts{
+		}, []string{"hostname"}),
+
+		ImagesSkipped: promauto.NewCounterVec(prometheus.CounterOpts{
 			Name: "image_cleanup_skipped_total",
 			Help: "The total number of images skipped",
-		}),
-		CleanupDuration: promauto.NewHistogram(prometheus.HistogramOpts{
+		}, []string{"hostname"}),
+
+		CleanupDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "image_cleanup_duration_seconds",
 			Help:    "Time spent running image cleanup",
 			Buckets: prometheus.DefBuckets,
-		}),
-		LastCleanupTime: promauto.NewGauge(prometheus.GaugeOpts{
+		}, []string{"hostname"}),
+
+		LastCleanupTime: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "image_cleanup_last_run_timestamp",
 			Help: "Timestamp of the last cleanup run",
-		}),
-		CleanupErrors: promauto.NewCounter(prometheus.CounterOpts{
+		}, []string{"hostname"}),
+
+		CleanupErrors: promauto.NewCounterVec(prometheus.CounterOpts{
 			Name: "image_cleanup_errors_total",
 			Help: "The total number of cleanup errors",
-		}),
+		}, []string{"hostname"}),
+		hostname: hostname,
 	}
 }

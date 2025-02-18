@@ -35,7 +35,6 @@ func NewFiberApp(logger *zap.Logger) *FiberApp {
 	return &FiberApp{app}
 }
 
-// internal/interfaces/http/router/router.go
 func SetupRoutes(app *FiberApp, handlers *handlers.Handlers, logger *zap.Logger) {
 	// Add middleware
 	app.Use(middleware.Recovery(logger))

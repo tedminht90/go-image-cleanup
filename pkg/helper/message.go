@@ -1,4 +1,3 @@
-// pkg/helper/message.go
 package helper
 
 import (
@@ -29,8 +28,8 @@ Duration: %s
 ✅ Removed: %d
 ⏭ Skipped: %d`,
 		hostInfo,
-		startTime.Format("2006-01-02 15:04:05 ICT"),
-		endTime.Format("2006-01-02 15:04:05 ICT"),
+		FormatICT(startTime),
+		FormatICT(endTime),
 		duration.Round(time.Second),
 		total,
 		removed,

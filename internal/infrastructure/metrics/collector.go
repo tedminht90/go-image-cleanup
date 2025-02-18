@@ -1,24 +1,25 @@
 package metrics
 
-import "time"
+import (
+	"time"
+)
 
-// Implement interface for Prometheus
 func (p *PrometheusMetrics) IncImagesRemoved() {
-	p.ImagesRemoved.Inc()
+	p.ImagesRemoved.WithLabelValues(p.hostname).Inc()
 }
 
 func (p *PrometheusMetrics) IncImagesSkipped() {
-	p.ImagesSkipped.Inc()
+	p.ImagesSkipped.WithLabelValues(p.hostname).Inc()
 }
 
 func (p *PrometheusMetrics) ObserveCleanupDuration(duration time.Duration) {
-	p.CleanupDuration.Observe(duration.Seconds())
+	p.CleanupDuration.WithLabelValues(p.hostname).Observe(duration.Seconds())
 }
 
 func (p *PrometheusMetrics) SetLastCleanupTime(timestamp time.Time) {
-	p.LastCleanupTime.Set(float64(timestamp.Unix()))
+	p.LastCleanupTime.WithLabelValues(p.hostname).Set(float64(timestamp.Unix()))
 }
 
 func (p *PrometheusMetrics) IncCleanupErrors() {
-	p.CleanupErrors.Inc()
+	p.CleanupErrors.WithLabelValues(p.hostname).Inc()
 }
