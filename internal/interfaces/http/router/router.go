@@ -104,8 +104,8 @@ func SetupRoutes(app *FiberApp, handlers *handlers.Handlers, metricsCollector me
 		return c.SendStatus(204) // No Content
 	})
 
-	// Health routes
-	app.Get("/health", handlers.Health.Status)
+	// Health routes with 5s timeout
+	app.Get("/health", middleware.TimeoutMiddleware(5*time.Second), handlers.Health.Status)
 
 	// Metrics routes
 	app.Get("/metrics", handlers.Metrics.Handle)
