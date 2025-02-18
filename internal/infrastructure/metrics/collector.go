@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// Image cleanup metrics
 func (p *PrometheusMetrics) IncImagesRemoved() {
 	p.ImagesRemoved.WithLabelValues(p.hostname).Inc()
 	p.logger.Debug("Images removed metric incremented",

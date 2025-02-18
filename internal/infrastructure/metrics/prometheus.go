@@ -9,13 +9,16 @@ import (
 )
 
 type PrometheusMetrics struct {
-	ImagesRemoved   *prometheus.CounterVec
-	ImagesSkipped   *prometheus.CounterVec
-	CleanupDuration *prometheus.HistogramVec
-	LastCleanupTime *prometheus.GaugeVec
-	CleanupErrors   *prometheus.CounterVec
-	hostname        string
-	logger          *zap.Logger
+	ImagesRemoved      *prometheus.CounterVec
+	ImagesSkipped      *prometheus.CounterVec
+	CleanupDuration    *prometheus.HistogramVec
+	LastCleanupTime    *prometheus.GaugeVec
+	CleanupErrors      *prometheus.CounterVec
+	HttpRequestTotal   *prometheus.CounterVec
+	HttpRequestTimeout *prometheus.CounterVec
+	HttpRequestErrors  *prometheus.CounterVec
+	hostname           string
+	logger             *zap.Logger
 }
 
 func NewPrometheusMetrics(logger *zap.Logger) *PrometheusMetrics {
@@ -57,6 +60,25 @@ func NewPrometheusMetrics(logger *zap.Logger) *PrometheusMetrics {
 			Name:      "errors_total",
 			Help:      "The total number of cleanup errors",
 		}, []string{"hostname"}),
+
+		HttpRequestTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "image_cleanup",
+			Name:      "http_requests_total",
+			Help:      "Total number of HTTP requests",
+		}, []string{"hostname", "path", "method", "status"}),
+
+		HttpRequestTimeout: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "image_cleanup",
+			Name:      "http_request_timeouts_total",
+			Help:      "Total number of HTTP request timeouts",
+		}, []string{"hostname", "path", "method"}),
+
+		HttpRequestErrors: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "image_cleanup",
+			Name:      "http_request_errors_total",
+			Help:      "Total number of HTTP request errors by status code",
+		}, []string{"hostname", "path", "method", "status", "error_type"}),
+
 		hostname: hostname,
 		logger:   logger,
 	}
