@@ -22,6 +22,10 @@ func NewFiberApp(logger *zap.Logger) *FiberApp {
 		ReadTimeout:           10 * time.Second,
 		WriteTimeout:          10 * time.Second,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			// Ignore favicon.ico errors
+			if c.Path() == "/favicon.ico" {
+				return nil
+			}
 			logger.Error("Request failed",
 				zap.Error(err),
 				zap.String("url", c.Path()),
@@ -39,6 +43,11 @@ func SetupRoutes(app *FiberApp, handlers *handlers.Handlers, logger *zap.Logger)
 	// Add middleware
 	app.Use(middleware.Recovery(logger))
 	app.Use(middleware.Logger(logger))
+
+	// Handle favicon.ico
+	app.Get("/favicon.ico", func(c *fiber.Ctx) error {
+		return c.SendStatus(204) // No Content
+	})
 
 	// Health routes
 	app.Get("/health", handlers.Health.Status)
