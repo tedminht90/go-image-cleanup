@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
 )
@@ -34,56 +35,62 @@ func NewPrometheusMetrics(logger *zap.Logger) *PrometheusMetrics {
 		logger.Error("Failed to get hostname", zap.Error(err))
 	}
 
-	// Use default registry
-	registry := prometheus.DefaultRegisterer.(*prometheus.Registry)
+	// Create new registry
+	registry := prometheus.NewRegistry()
 
-	// Create metrics instance
+	// Register system collectors
+	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	registry.MustRegister(collectors.NewGoCollector())
+
+	// Register promhttp metrics
+	prometheus.WrapRegistererWith(prometheus.Labels{"handler": "prometheus"}, registry)
+
 	metrics := &PrometheusMetrics{
 		registry: registry,
-		ImagesRemoved: promauto.NewCounterVec(prometheus.CounterOpts{
+		ImagesRemoved: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "removed_total",
 			Help:      "The total number of images removed",
 		}, []string{"hostname"}),
 
-		ImagesSkipped: promauto.NewCounterVec(prometheus.CounterOpts{
+		ImagesSkipped: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "skipped_total",
 			Help:      "The total number of images skipped",
 		}, []string{"hostname"}),
 
-		CleanupDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
+		CleanupDuration: promauto.With(registry).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "image_cleanup",
 			Name:      "duration_seconds",
 			Help:      "Time spent running image cleanup",
 			Buckets:   prometheus.DefBuckets,
 		}, []string{"hostname"}),
 
-		LastCleanupTime: promauto.NewGaugeVec(prometheus.GaugeOpts{
+		LastCleanupTime: promauto.With(registry).NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "image_cleanup",
 			Name:      "last_run_timestamp",
 			Help:      "Timestamp of the last cleanup run",
 		}, []string{"hostname"}),
 
-		CleanupErrors: promauto.NewCounterVec(prometheus.CounterOpts{
+		CleanupErrors: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "errors_total",
 			Help:      "The total number of cleanup errors",
 		}, []string{"hostname"}),
 
-		HttpRequestTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+		HttpRequestTotal: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "http_requests_total",
 			Help:      "Total number of HTTP requests",
 		}, []string{"hostname", "code", "method", "path"}),
 
-		HttpRequestTimeout: promauto.NewCounterVec(prometheus.CounterOpts{
+		HttpRequestTimeout: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "http_request_timeouts_total",
 			Help:      "Total number of HTTP request timeouts",
 		}, []string{"hostname", "path", "method"}),
 
-		HttpRequestErrors: promauto.NewCounterVec(prometheus.CounterOpts{
+		HttpRequestErrors: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "http_request_errors_total",
 			Help:      "Total number of HTTP request errors",

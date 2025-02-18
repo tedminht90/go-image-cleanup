@@ -151,35 +151,44 @@ func handleGracefulShutdown(app *router.FiberApp, serverErr chan error, cleanupC
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
+	var shutdownErr error
 	select {
 	case <-quit:
 		log.Info("Received shutdown signal, initiating graceful shutdown...")
 	case err := <-serverErr:
 		log.Error("Server error occurred", zap.Error(err))
+		shutdownErr = err
 	}
 
-	// Stop accepting new requests
-	if err := app.Shutdown(); err != nil {
-		log.Error("Error during server shutdown", zap.Error(err))
-	}
-
-	log.Info("Server stopped accepting new requests")
-
-	// Stop cleanup jobs
-	log.Info("Stopping cleanup jobs...")
-	cleanupCancel()
-
-	// Wait for ongoing requests to complete with timeout
+	// Create context for graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), constants.ShutdownTimeout)
 	defer shutdownCancel()
 
-	// Wait for cleanup and other goroutines
-	<-shutdownCtx.Done()
+	// Stop cleanup jobs first
+	log.Info("Stopping cleanup jobs...")
+	cleanupCancel()
 
-	if shutdownCtx.Err() == context.DeadlineExceeded {
-		log.Warn("Shutdown timeout exceeded, some operations may have been interrupted")
+	// Then shutdown the server
+	log.Info("Shutting down HTTP server...")
+	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
+		log.Error("Error during server shutdown", zap.Error(err))
+		shutdownErr = err
 	}
 
-	log.Info("Service shutdown completed")
-	os.Exit(0) // Clean exit, don't allow restart
+	// Wait for the shutdown context
+	select {
+	case <-shutdownCtx.Done():
+		if shutdownCtx.Err() == context.DeadlineExceeded {
+			log.Warn("Shutdown timeout exceeded")
+			shutdownErr = shutdownCtx.Err()
+		}
+	}
+
+	if shutdownErr != nil {
+		log.Error("Service shutdown completed with errors", zap.Error(shutdownErr))
+		os.Exit(1)
+	} else {
+		log.Info("Service shutdown completed successfully")
+		os.Exit(0)
+	}
 }
