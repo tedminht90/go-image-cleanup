@@ -137,6 +137,13 @@ func startServer(app *router.FiberApp, port string, log *zap.Logger) chan error 
 			serverErr <- err
 		}
 	}()
+
+	// Log service started after server is up
+	log.Info("Service started successfully",
+		zap.String("port", port),
+		zap.String("version", Version),
+		zap.String("buildTime", BuildTime))
+
 	return serverErr
 }
 
@@ -146,20 +153,33 @@ func handleGracefulShutdown(app *router.FiberApp, serverErr chan error, cleanupC
 
 	select {
 	case <-quit:
-		log.Info("Shutting down server...")
+		log.Info("Received shutdown signal, initiating graceful shutdown...")
 	case err := <-serverErr:
 		log.Error("Server error occurred", zap.Error(err))
 	}
 
+	// Stop accepting new requests
+	if err := app.Shutdown(); err != nil {
+		log.Error("Error during server shutdown", zap.Error(err))
+	}
+
+	log.Info("Server stopped accepting new requests")
+
+	// Stop cleanup jobs
 	log.Info("Stopping cleanup jobs...")
 	cleanupCancel()
 
+	// Wait for ongoing requests to complete with timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), constants.ShutdownTimeout)
 	defer shutdownCancel()
 
-	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
-		log.Error("Server forced to shutdown", zap.Error(err))
+	// Wait for cleanup and other goroutines
+	<-shutdownCtx.Done()
+
+	if shutdownCtx.Err() == context.DeadlineExceeded {
+		log.Warn("Shutdown timeout exceeded, some operations may have been interrupted")
 	}
 
-	log.Info("Service stopped successfully")
+	log.Info("Service shutdown completed")
+	os.Exit(0) // Clean exit, don't allow restart
 }

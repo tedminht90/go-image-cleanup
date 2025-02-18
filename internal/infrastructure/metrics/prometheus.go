@@ -23,7 +23,6 @@ type PrometheusMetrics struct {
 	logger             *zap.Logger
 }
 
-// GetRegistry implements RegistryGetter interface
 func (p *PrometheusMetrics) GetRegistry() *prometheus.Registry {
 	return p.registry
 }
@@ -35,56 +34,56 @@ func NewPrometheusMetrics(logger *zap.Logger) *PrometheusMetrics {
 		logger.Error("Failed to get hostname", zap.Error(err))
 	}
 
-	registry := prometheus.NewRegistry()
-	prometheus.DefaultRegisterer = registry
-	prometheus.DefaultGatherer = registry
+	// Use default registry
+	registry := prometheus.DefaultRegisterer.(*prometheus.Registry)
 
+	// Create metrics instance
 	metrics := &PrometheusMetrics{
 		registry: registry,
-		ImagesRemoved: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
+		ImagesRemoved: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "removed_total",
 			Help:      "The total number of images removed",
 		}, []string{"hostname"}),
 
-		ImagesSkipped: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
+		ImagesSkipped: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "skipped_total",
 			Help:      "The total number of images skipped",
 		}, []string{"hostname"}),
 
-		CleanupDuration: promauto.With(registry).NewHistogramVec(prometheus.HistogramOpts{
+		CleanupDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "image_cleanup",
 			Name:      "duration_seconds",
 			Help:      "Time spent running image cleanup",
 			Buckets:   prometheus.DefBuckets,
 		}, []string{"hostname"}),
 
-		LastCleanupTime: promauto.With(registry).NewGaugeVec(prometheus.GaugeOpts{
+		LastCleanupTime: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "image_cleanup",
 			Name:      "last_run_timestamp",
 			Help:      "Timestamp of the last cleanup run",
 		}, []string{"hostname"}),
 
-		CleanupErrors: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
+		CleanupErrors: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "errors_total",
 			Help:      "The total number of cleanup errors",
 		}, []string{"hostname"}),
 
-		HttpRequestTotal: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
+		HttpRequestTotal: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "http_requests_total",
 			Help:      "Total number of HTTP requests",
 		}, []string{"hostname", "code", "method", "path"}),
 
-		HttpRequestTimeout: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
+		HttpRequestTimeout: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "http_request_timeouts_total",
 			Help:      "Total number of HTTP request timeouts",
 		}, []string{"hostname", "path", "method"}),
 
-		HttpRequestErrors: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
+		HttpRequestErrors: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "http_request_errors_total",
 			Help:      "Total number of HTTP request errors",
@@ -93,12 +92,6 @@ func NewPrometheusMetrics(logger *zap.Logger) *PrometheusMetrics {
 		hostname: hostname,
 		logger:   logger,
 	}
-
-	// Register the default process and Go metrics
-	registry.MustRegister(
-		prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
-		prometheus.NewGoCollector(),
-	)
 
 	logger.Info("Prometheus metrics initialized",
 		zap.String("hostname", hostname))
