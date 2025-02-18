@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
 )
@@ -35,13 +34,10 @@ func NewPrometheusMetrics(logger *zap.Logger) *PrometheusMetrics {
 		logger.Error("Failed to get hostname", zap.Error(err))
 	}
 
-	// Use the default registry to ensure promhttp metrics are captured
+	// Use default registry
 	registry := prometheus.DefaultRegisterer.(*prometheus.Registry)
 
-	// Register the Go and Process collectors
-	registry.MustRegister(collectors.NewGoCollector())
-	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-
+	// Create metrics instance
 	metrics := &PrometheusMetrics{
 		registry: registry,
 		ImagesRemoved: promauto.NewCounterVec(prometheus.CounterOpts{
