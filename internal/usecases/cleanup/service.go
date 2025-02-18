@@ -156,12 +156,6 @@ func (s *CleanupService) getHostInfo() (string, string, error) {
 func (s *CleanupService) Cleanup(ctx context.Context) error {
 	startTime := helper.TimeInICT(time.Now())
 
-	defer func() {
-		duration := time.Since(startTime)
-		// Metrics are automatically collected via Prometheus Handler
-		s.metrics.ObserveCleanupDuration(duration)
-	}()
-
 	images, err := s.repo.GetAllImages(ctx)
 	if err != nil {
 		s.metrics.IncCleanupErrors()
