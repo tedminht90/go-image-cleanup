@@ -1,3 +1,4 @@
+// internal/interfaces/http/handlers/health.go
 package handlers
 
 import (
@@ -16,8 +17,11 @@ func NewHealthHandler(logger *zap.Logger) *HealthHandler {
 }
 
 func (h *HealthHandler) Status(c *fiber.Ctx) error {
-	h.logger.Debug("Health check requested")
+	h.logger.Debug("Health check requested",
+		zap.String("path", c.Path()),
+		zap.String("method", c.Method()))
+
 	return c.JSON(fiber.Map{
-		"status": "healthy",
+		"status": "ok",
 	})
 }

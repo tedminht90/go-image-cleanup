@@ -2,6 +2,7 @@ package router
 
 import (
 	"errors"
+	"go-image-cleanup/internal/domain/metrics"
 	"go-image-cleanup/internal/interfaces/http/handlers"
 	"go-image-cleanup/internal/interfaces/http/middleware"
 	"go-image-cleanup/pkg/constants"
@@ -90,10 +91,11 @@ func NewFiberApp(logger *zap.Logger) *FiberApp {
 	return &FiberApp{app}
 }
 
-func SetupRoutes(app *FiberApp, handlers *handlers.Handlers, logger *zap.Logger) {
+func SetupRoutes(app *FiberApp, handlers *handlers.Handlers, metricsCollector metrics.MetricsCollector, logger *zap.Logger) {
 	// Add middleware
 	app.Use(middleware.Recovery(logger))
 	app.Use(middleware.Logger(logger))
+	app.Use(middleware.MetricsMiddleware(metricsCollector, logger))
 
 	// Handle favicon.ico
 	app.Get("/favicon.ico", func(c *fiber.Ctx) error {

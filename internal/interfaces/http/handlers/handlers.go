@@ -1,6 +1,10 @@
 package handlers
 
-import "go.uber.org/zap"
+import (
+	"go-image-cleanup/internal/domain/metrics"
+
+	"go.uber.org/zap"
+)
 
 type Handlers struct {
 	Health  *HealthHandler
@@ -9,11 +13,11 @@ type Handlers struct {
 	logger  *zap.Logger
 }
 
-func NewHandlers(logger *zap.Logger, version, buildTime string) *Handlers {
+func NewHandlers(logger *zap.Logger, version, buildTime string, metrics metrics.MetricsCollector) *Handlers {
 	return &Handlers{
 		Health:  NewHealthHandler(logger),
 		Version: NewVersionHandler(version, buildTime),
-		Metrics: NewMetricsHandler(),
+		Metrics: NewMetricsHandler(metrics, logger),
 		logger:  logger,
 	}
 }

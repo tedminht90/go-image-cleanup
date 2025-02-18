@@ -8,9 +8,10 @@ import (
 	"syscall"
 
 	"go-image-cleanup/config"
+	"go-image-cleanup/internal/domain/metrics"
 	"go-image-cleanup/internal/infrastructure/container"
 	loggerPkg "go-image-cleanup/internal/infrastructure/logger"
-	"go-image-cleanup/internal/infrastructure/metrics"
+	prometheusMetrics "go-image-cleanup/internal/infrastructure/metrics"
 	"go-image-cleanup/internal/infrastructure/notification"
 	"go-image-cleanup/internal/interfaces/http/handlers"
 	"go-image-cleanup/internal/interfaces/http/router"
@@ -53,17 +54,17 @@ func main() {
 	// Initialize infrastructure dependencies
 	repo := container.NewCrictlRepository(log)
 	notifier := notification.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID, log)
-	metricsCollector := metrics.NewPrometheusMetrics(log)
+	metricsCollector := prometheusMetrics.NewPrometheusMetrics(log)
 
 	// Initialize services
 	cleanupService := cleanup.NewCleanupService(repo, notifier, metricsCollector, log)
 
 	// Initialize handlers
-	handlers := initializeHandlers(log, Version, BuildTime)
+	handlers := initializeHandlers(log, Version, BuildTime, metricsCollector)
 
 	// Setup router and HTTP server
 	app := router.NewFiberApp(log)
-	router.SetupRoutes(app, handlers, log)
+	router.SetupRoutes(app, handlers, metricsCollector, log)
 
 	// Initialize cleanup job context
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
@@ -99,8 +100,8 @@ func logStartupInfo(log *zap.Logger, cfg *config.Config, version, buildTime stri
 		zap.Bool("log_compress", cfg.Logger.Compress))
 }
 
-func initializeHandlers(log *zap.Logger, version, buildTime string) *handlers.Handlers {
-	return handlers.NewHandlers(log, version, buildTime)
+func initializeHandlers(log *zap.Logger, version, buildTime string, metricsCollector metrics.MetricsCollector) *handlers.Handlers {
+	return handlers.NewHandlers(log, version, buildTime, metricsCollector)
 }
 
 func setupCronJobs(ctx context.Context, cleanupService *cleanup.CleanupService, schedule string, log *zap.Logger) *cron.Cron {
