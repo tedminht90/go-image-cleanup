@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"go-image-cleanup/config"
 	"go-image-cleanup/internal/domain/metrics"
@@ -160,29 +161,38 @@ func handleGracefulShutdown(app *router.FiberApp, serverErr chan error, cleanupC
 		shutdownErr = err
 	}
 
-	// Create context for graceful shutdown
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), constants.ShutdownTimeout)
-	defer shutdownCancel()
-
 	// Stop cleanup jobs first
 	log.Info("Stopping cleanup jobs...")
 	cleanupCancel()
 
-	// Then shutdown the server
-	log.Info("Shutting down HTTP server...")
-	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
-		log.Error("Error during server shutdown", zap.Error(err))
-		shutdownErr = err
-	}
+	// Create context for graceful shutdown with a reasonable timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
-	// Wait for the shutdown context
+	// Shutdown the server
+	log.Info("Shutting down HTTP server...")
+	shutdownChan := make(chan bool)
+	go func() {
+		if err := app.ShutdownWithContext(shutdownCtx); err != nil {
+			log.Error("Error during server shutdown", zap.Error(err))
+			shutdownErr = err
+		}
+		close(shutdownChan)
+	}()
+
+	// Wait for either shutdown to complete or context to timeout
 	select {
+	case <-shutdownChan:
+		log.Info("Server shutdown completed successfully")
 	case <-shutdownCtx.Done():
 		if shutdownCtx.Err() == context.DeadlineExceeded {
-			log.Warn("Shutdown timeout exceeded")
+			log.Warn("Shutdown timeout exceeded, forcing exit")
 			shutdownErr = shutdownCtx.Err()
 		}
 	}
+
+	// Give a short grace period for any remaining cleanup
+	time.Sleep(2 * time.Second)
 
 	if shutdownErr != nil {
 		log.Error("Service shutdown completed with errors", zap.Error(shutdownErr))
