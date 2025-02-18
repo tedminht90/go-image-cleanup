@@ -1,21 +1,19 @@
 package metrics
 
 import (
-	"fmt"
 	"strconv"
 
 	"go.uber.org/zap"
 )
 
 func (p *PrometheusMetrics) IncHttpRequests(path, method string, status int) {
-	// Convert status to string for label
 	code := strconv.Itoa(status)
 
 	p.HttpRequestTotal.WithLabelValues(
 		p.hostname,
-		code,
-		path,
-		method,
+		path,   // path first
+		method, // then method
+		code,   // then status code
 	).Inc()
 
 	p.logger.Debug("HTTP request metric incremented",
@@ -40,7 +38,7 @@ func (p *PrometheusMetrics) IncHttpTimeout(path, method string) {
 }
 
 func (p *PrometheusMetrics) IncHttpError(path, method string, status int, errorType string) {
-	statusStr := fmt.Sprintf("%d", status)
+	statusStr := strconv.Itoa(status)
 	p.HttpRequestErrors.WithLabelValues(
 		p.hostname,
 		path,
