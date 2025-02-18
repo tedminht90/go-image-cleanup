@@ -2,6 +2,7 @@ package router
 
 import (
 	"errors"
+	"go-image-cleanup/internal/domain/metrics"
 	"go-image-cleanup/internal/interfaces/http/handlers"
 	"go-image-cleanup/internal/interfaces/http/middleware"
 	"go-image-cleanup/pkg/constants"
@@ -28,9 +29,11 @@ func NewFiberApp(logger *zap.Logger) *FiberApp {
 	app := fiber.New(fiber.Config{
 		AppName:               constants.ServiceName,
 		DisableStartupMessage: true,
-		IdleTimeout:           5 * time.Second,
-		ReadTimeout:           10 * time.Second,
-		WriteTimeout:          10 * time.Second,
+		IdleTimeout:           60 * time.Second, // Tăng idle timeout
+		ReadTimeout:           30 * time.Second, // Tăng read timeout
+		WriteTimeout:          30 * time.Second, // Tăng write timeout
+		DisableKeepalive:      false,            // Enable keepalive
+		ServerHeader:          constants.ServiceName,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			// Default status code and error message
 			status := fiber.StatusInternalServerError
@@ -90,18 +93,19 @@ func NewFiberApp(logger *zap.Logger) *FiberApp {
 	return &FiberApp{app}
 }
 
-func SetupRoutes(app *FiberApp, handlers *handlers.Handlers, logger *zap.Logger) {
+func SetupRoutes(app *FiberApp, handlers *handlers.Handlers, metricsCollector metrics.MetricsCollector, logger *zap.Logger) {
 	// Add middleware
 	app.Use(middleware.Recovery(logger))
 	app.Use(middleware.Logger(logger))
+	app.Use(middleware.MetricsMiddleware(metricsCollector, logger))
 
 	// Handle favicon.ico
 	app.Get("/favicon.ico", func(c *fiber.Ctx) error {
 		return c.SendStatus(204) // No Content
 	})
 
-	// Health routes
-	app.Get("/health", handlers.Health.Status)
+	// Health routes with 5s timeout
+	app.Get("/health", middleware.TimeoutMiddleware(5*time.Second), handlers.Health.Status)
 
 	// Metrics routes
 	app.Get("/metrics", handlers.Metrics.Handle)

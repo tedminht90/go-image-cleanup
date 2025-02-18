@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"go.uber.org/zap"
 )
 
 type VersionHandler struct {
 	version   string
 	buildTime string
+	logger    *zap.Logger
 }
 
 func NewVersionHandler(version, buildTime string) *VersionHandler {

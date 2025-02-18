@@ -1,3 +1,4 @@
+// internal/infrastructure/metrics/prometheus.go
 package metrics
 
 import (
@@ -9,6 +10,7 @@ import (
 )
 
 type PrometheusMetrics struct {
+	registry           *prometheus.Registry
 	ImagesRemoved      *prometheus.CounterVec
 	ImagesSkipped      *prometheus.CounterVec
 	CleanupDuration    *prometheus.HistogramVec
@@ -21,15 +23,23 @@ type PrometheusMetrics struct {
 	logger             *zap.Logger
 }
 
+func (p *PrometheusMetrics) GetRegistry() *prometheus.Registry {
+	return p.registry
+}
+
 func NewPrometheusMetrics(logger *zap.Logger) *PrometheusMetrics {
-	// Get hostname for labels
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown"
 		logger.Error("Failed to get hostname", zap.Error(err))
 	}
 
+	// Use default registry
+	registry := prometheus.DefaultRegisterer.(*prometheus.Registry)
+
+	// Create metrics instance
 	metrics := &PrometheusMetrics{
+		registry: registry,
 		ImagesRemoved: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "removed_total",
@@ -65,7 +75,7 @@ func NewPrometheusMetrics(logger *zap.Logger) *PrometheusMetrics {
 			Namespace: "image_cleanup",
 			Name:      "http_requests_total",
 			Help:      "Total number of HTTP requests",
-		}, []string{"hostname", "path", "method", "status"}),
+		}, []string{"hostname", "code", "method", "path"}),
 
 		HttpRequestTimeout: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
@@ -76,7 +86,7 @@ func NewPrometheusMetrics(logger *zap.Logger) *PrometheusMetrics {
 		HttpRequestErrors: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "image_cleanup",
 			Name:      "http_request_errors_total",
-			Help:      "Total number of HTTP request errors by status code",
+			Help:      "Total number of HTTP request errors",
 		}, []string{"hostname", "path", "method", "status", "error_type"}),
 
 		hostname: hostname,

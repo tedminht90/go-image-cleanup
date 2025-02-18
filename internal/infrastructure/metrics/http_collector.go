@@ -1,26 +1,27 @@
 package metrics
 
 import (
-	"fmt"
+	"strconv"
 
 	"go.uber.org/zap"
 )
 
-// HTTP request metrics
 func (p *PrometheusMetrics) IncHttpRequests(path, method string, status int) {
-	statusStr := fmt.Sprintf("%d", status)
+	code := strconv.Itoa(status)
+
 	p.HttpRequestTotal.WithLabelValues(
 		p.hostname,
-		path,
-		method,
-		statusStr,
+		path,   // path first
+		method, // then method
+		code,   // then status code
 	).Inc()
+
 	p.logger.Debug("HTTP request metric incremented",
 		zap.String("metric", "image_cleanup_http_requests_total"),
 		zap.String("hostname", p.hostname),
 		zap.String("path", path),
 		zap.String("method", method),
-		zap.Int("status", status))
+		zap.String("code", code))
 }
 
 func (p *PrometheusMetrics) IncHttpTimeout(path, method string) {
@@ -37,7 +38,7 @@ func (p *PrometheusMetrics) IncHttpTimeout(path, method string) {
 }
 
 func (p *PrometheusMetrics) IncHttpError(path, method string, status int, errorType string) {
-	statusStr := fmt.Sprintf("%d", status)
+	statusStr := strconv.Itoa(status)
 	p.HttpRequestErrors.WithLabelValues(
 		p.hostname,
 		path,

@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"go-image-cleanup/config"
+	"go-image-cleanup/internal/domain/metrics"
 	"go-image-cleanup/internal/infrastructure/container"
 	loggerPkg "go-image-cleanup/internal/infrastructure/logger"
-	"go-image-cleanup/internal/infrastructure/metrics"
+	prometheusMetrics "go-image-cleanup/internal/infrastructure/metrics"
 	"go-image-cleanup/internal/infrastructure/notification"
 	"go-image-cleanup/internal/interfaces/http/handlers"
 	"go-image-cleanup/internal/interfaces/http/router"
@@ -53,17 +56,17 @@ func main() {
 	// Initialize infrastructure dependencies
 	repo := container.NewCrictlRepository(log)
 	notifier := notification.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID, log)
-	metricsCollector := metrics.NewPrometheusMetrics(log)
+	metricsCollector := prometheusMetrics.NewPrometheusMetrics(log)
 
 	// Initialize services
 	cleanupService := cleanup.NewCleanupService(repo, notifier, metricsCollector, log)
 
 	// Initialize handlers
-	handlers := initializeHandlers(log, Version, BuildTime)
+	handlers := initializeHandlers(log, Version, BuildTime, metricsCollector)
 
 	// Setup router and HTTP server
 	app := router.NewFiberApp(log)
-	router.SetupRoutes(app, handlers, log)
+	router.SetupRoutes(app, handlers, metricsCollector, log)
 
 	// Initialize cleanup job context
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
@@ -99,8 +102,8 @@ func logStartupInfo(log *zap.Logger, cfg *config.Config, version, buildTime stri
 		zap.Bool("log_compress", cfg.Logger.Compress))
 }
 
-func initializeHandlers(log *zap.Logger, version, buildTime string) *handlers.Handlers {
-	return handlers.NewHandlers(log, version, buildTime)
+func initializeHandlers(log *zap.Logger, version, buildTime string, metricsCollector metrics.MetricsCollector) *handlers.Handlers {
+	return handlers.NewHandlers(log, version, buildTime, metricsCollector)
 }
 
 func setupCronJobs(ctx context.Context, cleanupService *cleanup.CleanupService, schedule string, log *zap.Logger) *cron.Cron {
@@ -132,33 +135,63 @@ func startServer(app *router.FiberApp, port string, log *zap.Logger) chan error 
 	go func() {
 		log.Info("Starting HTTP server", zap.String("port", port))
 		if err := app.Listen(":" + port); err != nil {
-			log.Error("Server error", zap.Error(err))
-			serverErr <- err
+			// Only send error if it's not a normal shutdown
+			if !strings.Contains(err.Error(), "server closed") {
+				log.Error("Server error", zap.Error(err))
+				serverErr <- err
+			} else {
+				log.Info("Server shutdown successfully")
+			}
 		}
 	}()
+
+	// Đợi một chút để đảm bảo server đã khởi động
+	time.Sleep(100 * time.Millisecond)
+
+	log.Info("Service started successfully",
+		zap.String("port", port),
+		zap.String("version", Version),
+		zap.String("buildTime", BuildTime))
+
 	return serverErr
 }
 
 func handleGracefulShutdown(app *router.FiberApp, serverErr chan error, cleanupCancel context.CancelFunc, log *zap.Logger) {
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
+	var shutdownErr error
 	select {
 	case <-quit:
-		log.Info("Shutting down server...")
+		log.Info("Received shutdown signal, initiating graceful shutdown...")
 	case err := <-serverErr:
 		log.Error("Server error occurred", zap.Error(err))
+		shutdownErr = err
 	}
 
+	// Tạo context cho shutdown với timeout dài hơn
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer shutdownCancel()
+
+	// Stop cleanup jobs first
 	log.Info("Stopping cleanup jobs...")
 	cleanupCancel()
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), constants.ShutdownTimeout)
-	defer shutdownCancel()
-
+	// Shutdown the server
+	log.Info("Shutting down HTTP server...")
 	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
-		log.Error("Server forced to shutdown", zap.Error(err))
+		log.Error("Error during server shutdown", zap.Error(err))
+		shutdownErr = err
 	}
 
-	log.Info("Service stopped successfully")
+	// Đợi một chút để các kết nối hiện tại hoàn thành
+	time.Sleep(2 * time.Second)
+
+	if shutdownErr != nil {
+		log.Error("Service shutdown completed with errors", zap.Error(shutdownErr))
+		os.Exit(1)
+	}
+
+	log.Info("Service shutdown completed successfully")
+	os.Exit(0)
 }

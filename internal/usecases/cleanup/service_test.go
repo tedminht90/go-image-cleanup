@@ -2,6 +2,7 @@ package cleanup
 
 import (
 	"context"
+	"fmt"
 	"go-image-cleanup/internal/domain/models"
 	"testing"
 	"time"
@@ -60,6 +61,9 @@ type mockMetricsCollector struct {
 	cleanupErrors   int
 	lastCleanupTime time.Time
 	cleanupDuration time.Duration
+	httpRequests    map[string]int // track requests by path
+	httpTimeouts    map[string]int // track timeouts by path
+	httpErrors      map[string]int // track errors by path
 }
 
 func (m *mockMetricsCollector) IncImagesRemoved() {
@@ -80,6 +84,31 @@ func (m *mockMetricsCollector) SetLastCleanupTime(timestamp time.Time) {
 
 func (m *mockMetricsCollector) IncCleanupErrors() {
 	m.cleanupErrors++
+}
+
+// New methods to implement HTTP metrics
+func (m *mockMetricsCollector) IncHttpRequests(path, method string, status int) {
+	if m.httpRequests == nil {
+		m.httpRequests = make(map[string]int)
+	}
+	key := fmt.Sprintf("%s-%s-%d", path, method, status)
+	m.httpRequests[key]++
+}
+
+func (m *mockMetricsCollector) IncHttpTimeout(path, method string) {
+	if m.httpTimeouts == nil {
+		m.httpTimeouts = make(map[string]int)
+	}
+	key := fmt.Sprintf("%s-%s", path, method)
+	m.httpTimeouts[key]++
+}
+
+func (m *mockMetricsCollector) IncHttpError(path, method string, status int, errorType string) {
+	if m.httpErrors == nil {
+		m.httpErrors = make(map[string]int)
+	}
+	key := fmt.Sprintf("%s-%s-%d-%s", path, method, status, errorType)
+	m.httpErrors[key]++
 }
 
 func TestCleanupService(t *testing.T) {
@@ -162,7 +191,7 @@ func TestCleanupService(t *testing.T) {
 			}
 			notifier := &mockNotifier{}
 
-            metrics := &mockMetricsCollector{}
+			metrics := &mockMetricsCollector{}
 
 			// Create service
 			service := NewCleanupService(repo, notifier, metrics, logger)
