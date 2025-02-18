@@ -1,4 +1,3 @@
-// internal/infrastructure/handlers/metrics.go
 package handlers
 
 import (

@@ -1,3 +1,4 @@
+// internal/interfaces/http/handlers/metrics.go
 package handlers
 
 import (
@@ -10,31 +11,43 @@ import (
 	"go.uber.org/zap"
 )
 
+type RegistryGetter interface {
+	GetRegistry() *prometheus.Registry
+}
+
 type MetricsHandler struct {
 	handler fiber.Handler
 	metrics metrics.MetricsCollector
 	logger  *zap.Logger
 }
 
-func NewMetricsHandler(metrics metrics.MetricsCollector, logger *zap.Logger) *MetricsHandler {
+func NewMetricsHandler(metricsCollector metrics.MetricsCollector, logger *zap.Logger) *MetricsHandler {
 	if logger == nil {
 		panic("logger is required for MetricsHandler")
 	}
-	if metrics == nil {
+	if metricsCollector == nil {
 		panic("metrics collector is required for MetricsHandler")
 	}
 
-	// Configure prometheus handler with custom options
+	// Try to get registry if available
+	var registry *prometheus.Registry
+	if getter, ok := metricsCollector.(RegistryGetter); ok {
+		registry = getter.GetRegistry()
+	} else {
+		registry = prometheus.DefaultRegisterer.(*prometheus.Registry)
+	}
+
+	// Configure prometheus handler
 	handlerOpts := promhttp.HandlerOpts{
 		ErrorLog:          zap.NewStdLog(logger),
 		ErrorHandling:     promhttp.ContinueOnError,
-		Registry:          prometheus.DefaultRegisterer.(*prometheus.Registry),
+		Registry:          registry,
 		EnableOpenMetrics: true,
 	}
 
 	return &MetricsHandler{
-		handler: adaptor.HTTPHandler(promhttp.HandlerFor(prometheus.DefaultGatherer, handlerOpts)),
-		metrics: metrics,
+		handler: adaptor.HTTPHandler(promhttp.HandlerFor(registry, handlerOpts)),
+		metrics: metricsCollector,
 		logger:  logger,
 	}
 }
@@ -44,35 +57,18 @@ func (h *MetricsHandler) Handle(c *fiber.Ctx) error {
 		zap.String("path", c.Path()),
 		zap.String("method", c.Method()))
 
-	// Error handling wrapper for promhttp.Handler
-	handler := func(c *fiber.Ctx) error {
-		err := h.handler(c)
-		if err != nil {
-			h.logger.Error("Prometheus handler error",
-				zap.Error(err),
-				zap.String("path", c.Path()),
-				zap.String("method", c.Method()))
-
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": "Failed to collect metrics",
-				"code":  fiber.StatusInternalServerError,
-			})
-		}
-		return err
-	}
-
 	// Add response headers
 	c.Set("Content-Type", "text/plain; version=0.0.4")
 
-	// Execute handler with error handling
-	if err := handler(c); err != nil {
+	// Execute handler
+	if err := h.handler(c); err != nil {
 		h.logger.Error("Failed to handle metrics request",
 			zap.Error(err),
 			zap.String("path", c.Path()),
 			zap.String("method", c.Method()))
 
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Internal Server Error",
+			"error": "Failed to collect metrics",
 			"code":  fiber.StatusInternalServerError,
 		})
 	}
