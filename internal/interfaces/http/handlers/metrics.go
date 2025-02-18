@@ -11,10 +11,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type RegistryGetter interface {
-	GetRegistry() *prometheus.Registry
-}
-
 type MetricsHandler struct {
 	handler fiber.Handler
 	metrics metrics.MetricsCollector
@@ -29,36 +25,30 @@ func NewMetricsHandler(metricsCollector metrics.MetricsCollector, logger *zap.Lo
 		panic("metrics collector is required for MetricsHandler")
 	}
 
-	// Try to get registry if available
-	var registry *prometheus.Registry
-	if getter, ok := metricsCollector.(RegistryGetter); ok {
-		registry = getter.GetRegistry()
-	} else {
-		registry = prometheus.DefaultRegisterer.(*prometheus.Registry)
-	}
-
-	// Configure prometheus handler
+	// Create handler with instrumentation
 	handlerOpts := promhttp.HandlerOpts{
 		ErrorLog:          zap.NewStdLog(logger),
 		ErrorHandling:     promhttp.ContinueOnError,
-		Registry:          registry,
 		EnableOpenMetrics: true,
 	}
 
+	// Create an instrumented handler that will automatically track metrics
+	instrumentedHandler := promhttp.InstrumentMetricHandler(
+		prometheus.DefaultRegisterer,
+		promhttp.HandlerFor(prometheus.DefaultGatherer, handlerOpts),
+	)
+
 	return &MetricsHandler{
-		handler: adaptor.HTTPHandler(promhttp.HandlerFor(registry, handlerOpts)),
+		handler: adaptor.HTTPHandler(instrumentedHandler),
 		metrics: metricsCollector,
 		logger:  logger,
 	}
 }
 
 func (h *MetricsHandler) Handle(c *fiber.Ctx) error {
-	h.logger.Debug("Starting metrics request handling",
+	h.logger.Debug("Handling metrics request",
 		zap.String("path", c.Path()),
 		zap.String("method", c.Method()))
-
-	// Add response headers
-	c.Set("Content-Type", "text/plain; version=0.0.4")
 
 	// Execute handler
 	if err := h.handler(c); err != nil {
