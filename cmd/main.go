@@ -53,7 +53,7 @@ func main() {
 	// Initialize infrastructure dependencies
 	repo := container.NewCrictlRepository(log)
 	notifier := notification.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID, log)
-	metricsCollector := metrics.NewPrometheusMetrics()
+	metricsCollector := metrics.NewPrometheusMetrics(log)
 
 	// Initialize services
 	cleanupService := cleanup.NewCleanupService(repo, notifier, metricsCollector, log)
