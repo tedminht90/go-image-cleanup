@@ -29,9 +29,11 @@ func NewFiberApp(logger *zap.Logger) *FiberApp {
 	app := fiber.New(fiber.Config{
 		AppName:               constants.ServiceName,
 		DisableStartupMessage: true,
-		IdleTimeout:           5 * time.Second,
-		ReadTimeout:           10 * time.Second,
-		WriteTimeout:          10 * time.Second,
+		IdleTimeout:           60 * time.Second, // Tăng idle timeout
+		ReadTimeout:           30 * time.Second, // Tăng read timeout
+		WriteTimeout:          30 * time.Second, // Tăng write timeout
+		DisableKeepalive:      false,            // Enable keepalive
+		ServerHeader:          constants.ServiceName,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			// Default status code and error message
 			status := fiber.StatusInternalServerError
