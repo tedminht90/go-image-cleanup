@@ -16,40 +16,49 @@ log() {
 # Create log directory if it doesn't exist
 mkdir -p "/var/log/${SERVICE_NAME}"
 
-# Function to check if service is running
-check_service_status() {
-    if systemctl is-active --quiet $SERVICE_NAME; then
-        return 0
-    else
+# Function to do HTTP health check
+do_health_check() {
+    log "Making HTTP request to: $HEALTH_CHECK_URL"
+    response=$(curl -s -m $CURL_TIMEOUT -w "\n%{http_code}" $HEALTH_CHECK_URL)
+    curl_status=$?
+
+    if [ $curl_status -ne 0 ]; then
+        log "Curl failed with status: $curl_status"
         return 1
     fi
-}
-
-# Function to check health endpoint
-check_health_endpoint() {
-    # Add timeout to curl and more complete response checking
-    response=$(curl -s -m $CURL_TIMEOUT -w "\n%{http_code}" $HEALTH_CHECK_URL)
-    if [ $? -ne 0 ]; then
-        log "curl failed to execute"
-        return 1
-    }
 
     http_code=$(echo "$response" | tail -n1)
     content=$(echo "$response" | head -n1)
+
+    log "HTTP response code: $http_code"
+    log "Response content: $content"
 
     if [ "$http_code" = "200" ]; then
         if echo "$content" | grep -q '"status":"ok"'; then
             # Extract and log useful information
             uptime=$(echo "$content" | grep -o '"uptime":"[^"]*"' | cut -d'"' -f4)
             goroutines=$(echo "$content" | grep -o '"goroutines":[0-9]*' | cut -d':' -f2)
-            log "Health check details - Uptime: $uptime, Goroutines: $goroutines"
+            log "Health check passed - Uptime: $uptime, Goroutines: $goroutines"
             return 0
+        else
+            log "Response status is not 'ok'"
+            return 1
         fi
+    else
+        log "Unexpected HTTP status code: $http_code"
+        return 1
     fi
+}
 
-    # Log failure details
-    log "Failed health check - HTTP Code: $http_code, Response: $content"
-    return 1
+# Function to check if service is running
+check_service_status() {
+    if systemctl is-active --quiet $SERVICE_NAME; then
+        log "Service is running"
+        return 0
+    else
+        log "Service is not running"
+        return 1
+    fi
 }
 
 # Main health check logic
@@ -73,10 +82,11 @@ if ! check_service_status; then
     fi
 fi
 
-# Check health endpoint with retries
+# Do health checks with retries
 retry_count=0
 while [ $retry_count -lt $MAX_RETRIES ]; do
-    if check_health_endpoint; then
+    do_health_check
+    if [ $? -eq 0 ]; then
         log "Health check passed successfully"
         exit 0
     fi
@@ -98,7 +108,7 @@ log "Service restart initiated"
 
 # Final check after restart
 sleep 5
-if check_health_endpoint; then
+if do_health_check; then
     log "Service recovered after restart"
     exit 0
 else
