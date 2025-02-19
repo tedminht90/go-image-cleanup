@@ -1,4 +1,3 @@
-// internal/infrastructure/metrics/prometheus.go
 package metrics
 
 import (
