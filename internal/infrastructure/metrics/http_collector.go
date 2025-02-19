@@ -11,17 +11,17 @@ func (p *PrometheusMetrics) IncHttpRequests(path, method string, status int) {
 
 	p.HttpRequestTotal.WithLabelValues(
 		p.hostname,
-		path,   // path first
+		code,   // path first
 		method, // then method
-		code,   // then status code
+		path,   // then status code
 	).Inc()
 
 	p.logger.Debug("HTTP request metric incremented",
 		zap.String("metric", "image_cleanup_http_requests_total"),
 		zap.String("hostname", p.hostname),
-		zap.String("path", path),
+		zap.String("code", code),
 		zap.String("method", method),
-		zap.String("code", code))
+		zap.String("path", path))
 }
 
 func (p *PrometheusMetrics) IncHttpTimeout(path, method string) {
