@@ -1,4 +1,3 @@
-// config/config.go
 package config
 
 import (
@@ -82,9 +81,6 @@ func LoadConfig() (*Config, error) {
 			Compress:   viper.GetBool("LOG_COMPRESS"),
 		},
 	}
-
-	// Print current configuration
-	fmt.Println(config.String())
 
 	return config, nil
 }

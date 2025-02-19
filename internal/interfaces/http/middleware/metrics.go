@@ -1,4 +1,3 @@
-// internal/interfaces/http/middleware/metrics.go
 package middleware
 
 import (
