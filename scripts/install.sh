@@ -17,31 +17,50 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
-# Check if we're in the build directory
-if [ ! -f "${SERVICE_NAME}" ] || [ ! -f "healthcheck.sh" ]; then
-    log "Error: Required files not found. Please run build.sh first"
+# Detect platform
+detect_platform() {
+    if [ -f /etc/fedora-release ] || [ -f /etc/redhat-release ]; then
+        echo "fedora"
+    else
+        echo "linux"
+    fi
+}
+
+PLATFORM=$(detect_platform)
+log "Detected platform: ${PLATFORM}"
+
+# Set correct build directory based on platform
+BUILD_DIR="../${PLATFORM}"
+if [ ! -d "$BUILD_DIR" ]; then
+    log "Error: Build directory for ${PLATFORM} not found"
+    log "Expected: ${BUILD_DIR}"
+    log "Please make sure you're running from the correct build directory"
     exit 1
 fi
 
-# Check OS
+# Check if we're in the correct build directory
+if [ ! -f "${BUILD_DIR}/${SERVICE_NAME}" ] || [ ! -f "${BUILD_DIR}/scripts/healthcheck.sh" ]; then
+    log "Error: Required files not found in ${BUILD_DIR}"
+    log "Please make sure you have the correct build files for ${PLATFORM}"
+    exit 1
+fi
+
+# Common checks
 if [ "$(uname)" != "Linux" ]; then
     log "Error: This script only supports Linux"
     exit 1
 fi
 
-# Check if running as root
 if [ "$EUID" -ne 0 ]; then
     log "Please run as root"
     exit 1
 fi
 
-# Check systemd
 if ! pidof systemd >/dev/null; then
     log "Error: systemd is not running"
     exit 1
 fi
 
-# Check crictl
 if ! command -v crictl >/dev/null 2>&1; then
     log "Error: crictl is not installed"
     exit 1
@@ -63,10 +82,10 @@ log "Creating directories..."
 mkdir -p "$CONFIG_DIR"
 mkdir -p "$LOG_DIR"
 
-# Install binary and scripts
-log "Installing files..."
-cp "${SERVICE_NAME}" "$BINARY_PATH"
-cp "healthcheck.sh" "${BINARY_PATH}-healthcheck"
+# Install binary and scripts from correct platform directory
+log "Installing files from ${PLATFORM} build..."
+cp "${BUILD_DIR}/${SERVICE_NAME}" "$BINARY_PATH"
+cp "${BUILD_DIR}/scripts/healthcheck.sh" "${BINARY_PATH}-healthcheck"
 chmod +x "$BINARY_PATH"
 chmod +x "${BINARY_PATH}-healthcheck"
 
@@ -184,9 +203,9 @@ if ! systemctl is-active --quiet "$SERVICE_NAME"; then
 fi
 
 # Display version information
-if [ -f "version.txt" ]; then
+if [ -f "${BUILD_DIR}/version.txt" ]; then
     log "Installing version:"
-    cat "version.txt"
+    cat "${BUILD_DIR}/version.txt"
 fi
 
 # Display status and final instructions
