@@ -43,10 +43,21 @@ clean:
 	@go clean
 	$(call log,"Clean completed")
 
+# Verify build directory exists
+verify-build:
+	@if [ ! -d "$(BUILD_DIR)/$(PLATFORM)" ]; then \
+		echo "$(COLOR_YELLOW)Build directory not found. Running build first...$(COLOR_RESET)"; \
+		make build; \
+	fi
+
 # Install service (requires root)
-install:
+install: verify-build
 	$(call log,"Installing service for platform: $(PLATFORM)...")
-	@cd $(BUILD_DIR)/$(PLATFORM)/scripts && sudo ./install.sh
+	@if [ ! -f "$(BUILD_DIR)/$(PLATFORM)/$(SERVICE_NAME)" ]; then \
+		echo "$(COLOR_YELLOW)Binary not found in build directory. Please run 'make build' first.$(COLOR_RESET)"; \
+		exit 1; \
+	fi
+	@cd $(BUILD_DIR)/$(PLATFORM) && sudo ./scripts/install.sh
 
 # Uninstall service (requires root)
 uninstall:
