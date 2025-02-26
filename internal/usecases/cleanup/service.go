@@ -55,10 +55,18 @@ func (s *CleanupService) GetLastCleanupStats() (*CleanupStats, error) {
 	defer cancel()
 
 	result, err := s.resultRepo.GetLatestResult(ctx)
+
+	// Lấy thông tin hostname thay vì trả về chuỗi cố định
+	hostname, ips, hostErr := s.getHostInfo()
+	hostInfo := "Unknown host"
+	if hostErr == nil {
+		hostInfo = fmt.Sprintf("Host: %s\nIP(s): %s", hostname, ips)
+	}
+
 	if err != nil {
 		s.logger.Warn("Failed to get latest cleanup result", zap.Error(err))
 		return &CleanupStats{
-			HostInfo:   "No cleanup data available",
+			HostInfo:   hostInfo,
 			StartTime:  time.Time{},
 			EndTime:    time.Time{},
 			Duration:   0,
