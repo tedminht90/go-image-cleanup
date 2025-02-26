@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3" // SQLite driver
 	"go.uber.org/zap"
+	_ "modernc.org/sqlite" // Pure Go SQLite driver - không yêu cầu CGO
 )
 
 // Đảm bảo SQLiteCleanupResultRepository implement CleanupResultRepository
@@ -30,8 +30,8 @@ func NewSQLiteCleanupResultRepository(dbPath string, logger *zap.Logger) (*SQLit
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	// Mở kết nối đến database
-	db, err := sql.Open("sqlite3", dbPath)
+	// Mở kết nối đến database với các tùy chọn cho modernc.org/sqlite
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -40,6 +40,17 @@ func NewSQLiteCleanupResultRepository(dbPath string, logger *zap.Logger) (*SQLit
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Thiết lập các tùy chọn SQLite quan trọng
+	_, err = db.Exec("PRAGMA journal_mode=WAL;") // Write-Ahead Logging mode
+	if err != nil {
+		logger.Warn("Failed to enable WAL mode", zap.Error(err))
+	}
+
+	_, err = db.Exec("PRAGMA foreign_keys=ON;") // Bật ràng buộc khóa ngoại
+	if err != nil {
+		logger.Warn("Failed to enable foreign keys", zap.Error(err))
 	}
 
 	repo := &SQLiteCleanupResultRepository{
@@ -100,13 +111,13 @@ func (r *SQLiteCleanupResultRepository) SaveResult(ctx context.Context, result r
 	`,
 		result.ID,
 		result.HostInfo,
-		result.StartTime,
-		result.EndTime,
+		result.StartTime.UTC().Format(time.RFC3339), // Chuyển đổi thời gian sang UTC và định dạng ISO
+		result.EndTime.UTC().Format(time.RFC3339),
 		result.Duration.Milliseconds(),
 		result.TotalCount,
 		result.Removed,
 		result.Skipped,
-		result.CreatedAt,
+		result.CreatedAt.UTC().Format(time.RFC3339),
 	)
 
 	if err != nil {
@@ -159,12 +170,31 @@ func (r *SQLiteCleanupResultRepository) GetResults(ctx context.Context, limit, o
 	var results []repositories.CleanupResult
 	for rows.Next() {
 		var id, hostInfo string
-		var startTime, endTime, createdAt time.Time
+		var startTimeStr, endTimeStr, createdAtStr string
 		var durationMs, totalCount, removed, skipped int64
 
-		err := rows.Scan(&id, &hostInfo, &startTime, &endTime, &durationMs, &totalCount, &removed, &skipped, &createdAt)
+		err := rows.Scan(&id, &hostInfo, &startTimeStr, &endTimeStr, &durationMs, &totalCount, &removed, &skipped, &createdAtStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		// Parse time strings
+		startTime, err := time.Parse(time.RFC3339, startTimeStr)
+		if err != nil {
+			r.logger.Warn("Failed to parse start time", zap.Error(err), zap.String("value", startTimeStr))
+			startTime = time.Time{}
+		}
+
+		endTime, err := time.Parse(time.RFC3339, endTimeStr)
+		if err != nil {
+			r.logger.Warn("Failed to parse end time", zap.Error(err), zap.String("value", endTimeStr))
+			endTime = time.Time{}
+		}
+
+		createdAt, err := time.Parse(time.RFC3339, createdAtStr)
+		if err != nil {
+			r.logger.Warn("Failed to parse created at time", zap.Error(err), zap.String("value", createdAtStr))
+			createdAt = time.Time{}
 		}
 
 		results = append(results, repositories.CleanupResult{
@@ -190,15 +220,34 @@ func (r *SQLiteCleanupResultRepository) GetResults(ctx context.Context, limit, o
 // scanResult đọc một kết quả từ sql.Row
 func (r *SQLiteCleanupResultRepository) scanResult(row *sql.Row) (*repositories.CleanupResult, error) {
 	var id, hostInfo string
-	var startTime, endTime, createdAt time.Time
+	var startTimeStr, endTimeStr, createdAtStr string
 	var durationMs, totalCount, removed, skipped int64
 
-	err := row.Scan(&id, &hostInfo, &startTime, &endTime, &durationMs, &totalCount, &removed, &skipped, &createdAt)
+	err := row.Scan(&id, &hostInfo, &startTimeStr, &endTimeStr, &durationMs, &totalCount, &removed, &skipped, &createdAtStr)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("no cleanup results found")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan result: %w", err)
+	}
+
+	// Parse time strings
+	startTime, err := time.Parse(time.RFC3339, startTimeStr)
+	if err != nil {
+		r.logger.Warn("Failed to parse start time", zap.Error(err), zap.String("value", startTimeStr))
+		startTime = time.Time{}
+	}
+
+	endTime, err := time.Parse(time.RFC3339, endTimeStr)
+	if err != nil {
+		r.logger.Warn("Failed to parse end time", zap.Error(err), zap.String("value", endTimeStr))
+		endTime = time.Time{}
+	}
+
+	createdAt, err := time.Parse(time.RFC3339, createdAtStr)
+	if err != nil {
+		r.logger.Warn("Failed to parse created at time", zap.Error(err), zap.String("value", createdAtStr))
+		createdAt = time.Time{}
 	}
 
 	return &repositories.CleanupResult{
