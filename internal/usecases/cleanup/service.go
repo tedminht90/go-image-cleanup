@@ -18,6 +18,9 @@ import (
 	"go.uber.org/zap"
 )
 
+// Verify that CleanupService implements CleanupUseCase
+var _ CleanupUseCase = (*CleanupService)(nil)
+
 type CleanupService struct {
 	repo       repositories.ImageRepository
 	notifier   notification.Notifier

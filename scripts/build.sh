@@ -3,82 +3,148 @@
 # Exit on any error
 set -e
 
-# Config
+# Service configuration
 SERVICE_NAME="image-cleanup"
 OUTPUT_DIR="./build"
+PLATFORMS=("linux" "fedora")  # Build for both Ubuntu/Debian and Fedora CoreOS
 
 # Function for logging
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
-# Check if go is installed
-if ! command -v go >/dev/null 2>&1; then
-    log "Error: Go is not installed"
-    exit 1
-fi
+# Check build requirements
+check_requirements() {
+    log "Checking build requirements..."
 
-# Check Go version
-GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
-if [[ "${GO_VERSION}" < "1.21" ]]; then
-    log "Error: Go version must be 1.21 or higher (current: ${GO_VERSION})"
-    exit 1
-fi
+    # Check if go is installed
+    if ! command -v go >/dev/null 2>&1; then
+        log "Error: Go is not installed"
+        exit 1
+    fi
 
-# Create build directory
-log "Creating build directory..."
-mkdir -p "$OUTPUT_DIR"
+    # Check Go version (requires 1.21 or higher)
+    GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+    if [[ "${GO_VERSION}" < "1.21" ]]; then
+        log "Error: Go version must be 1.21 or higher (current: ${GO_VERSION})"
+        exit 1
+    fi
 
-# Clean previous build
-log "Cleaning previous build..."
-rm -f "${OUTPUT_DIR}/${SERVICE_NAME}"
+    log "Build requirements met: Go ${GO_VERSION}"
+}
 
-# Build the application
-log "Building application..."
-export CGO_ENABLED=0  # Disable CGO for static binary
-export GOOS=linux    # Ensure we're building for Linux
-COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# Setup build environment
+setup_build_env() {
+    log "Setting up build environment..."
 
-# Get build time in ICT timezone
-BUILD_TIME=$(TZ=Asia/Bangkok date '+%Y-%m-%d_%H:%M:%S_ICT')
+    # Clean and create build directories
+    for platform in "${PLATFORMS[@]}"; do
+        log "Setting up ${platform} build directory..."
+        mkdir -p "${OUTPUT_DIR}/${platform}"
+        rm -f "${OUTPUT_DIR}/${platform}/${SERVICE_NAME}"
+    done
+}
 
-go build -o "${OUTPUT_DIR}/${SERVICE_NAME}" \
-    -ldflags "-X main.Version=$COMMIT_HASH -X main.BuildTime=$BUILD_TIME" \
-    ./cmd/main.go
+# Get build information
+get_build_info() {
+    log "Getting build information..."
 
-if [ $? -ne 0 ]; then
-    log "Error: Build failed"
-    exit 1
-fi
+    # Get commit hash
+    COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-# Verify binary exists and is executable
-log "Verifying binary..."
-if [ ! -f "${OUTPUT_DIR}/${SERVICE_NAME}" ]; then
-    log "Error: Binary file not found"
-    exit 1
-fi
+    # Get build time in ICT timezone
+    BUILD_TIME=$(TZ=Asia/Bangkok date '+%Y-%m-%d_%H:%M:%S_ICT')
 
-if [ ! -x "${OUTPUT_DIR}/${SERVICE_NAME}" ]; then
-    log "Error: Binary is not executable"
-    exit 1
-fi
+    log "Build info - Version: ${COMMIT_HASH}, Time: ${BUILD_TIME}"
+    return 0
+}
 
-# Get binary size
-BINARY_SIZE=$(ls -lh "${OUTPUT_DIR}/${SERVICE_NAME}" | awk '{print $5}')
-log "Binary size: ${BINARY_SIZE}"
+# Build binary for a specific platform
+build_binary() {
+    local platform=$1
+    log "Building binary for ${platform}..."
 
-# Copy required scripts
-log "Copying scripts..."
-cp scripts/healthcheck.sh "${OUTPUT_DIR}/"
-cp scripts/install.sh "${OUTPUT_DIR}/"
-chmod +x "${OUTPUT_DIR}/healthcheck.sh"
-chmod +x "${OUTPUT_DIR}/install.sh"
+    # Set output path
+    local output="${OUTPUT_DIR}/${platform}/${SERVICE_NAME}"
 
-# Create version file with ICT time
-echo "Version: ${COMMIT_HASH}" > "${OUTPUT_DIR}/version.txt"
-echo "Build Time: ${BUILD_TIME}" >> "${OUTPUT_DIR}/version.txt"
+    # Set build tags based on platform
+    local tags="containers_image_openpgp"  # Both platforms use the same tags as they both use crictl
 
-log "Build completed successfully!"
-log "Build outputs are in: $OUTPUT_DIR"
-log "Version information:"
-cat "${OUTPUT_DIR}/version.txt"
+    # Build the binary
+    export CGO_ENABLED=0  # Disable CGO for static binary
+    export GOOS=linux    # Build for Linux
+
+    log "Running go build for ${platform}..."
+    go build \
+        -o "$output" \
+        -tags "$tags" \
+        -ldflags "-X main.Version=$COMMIT_HASH -X main.BuildTime=$BUILD_TIME" \
+        ./cmd/main.go
+
+    # Verify binary
+    if [ ! -f "$output" ]; then
+        log "Error: Binary not created for ${platform}"
+        return 1
+    fi
+
+    chmod +x "$output"
+    local size=$(ls -lh "$output" | awk '{print $5}')
+    log "${platform} binary built successfully (size: ${size})"
+}
+
+# Copy additional files
+copy_additional_files() {
+    local platform=$1
+    log "Copying additional files for ${platform}..."
+
+    # Create scripts directory
+    mkdir -p "${OUTPUT_DIR}/${platform}/scripts"
+
+    # Copy scripts
+    cp scripts/healthcheck.sh "${OUTPUT_DIR}/${platform}/scripts/"
+    cp scripts/install.sh "${OUTPUT_DIR}/${platform}/scripts/"
+    cp scripts/uninstall.sh "${OUTPUT_DIR}/${platform}/scripts/"
+
+    # Set permissions
+    chmod +x "${OUTPUT_DIR}/${platform}/scripts/"*.sh
+
+    # Create version file
+    cat > "${OUTPUT_DIR}/${platform}/version.txt" << EOF
+Platform: ${platform}
+Version: ${COMMIT_HASH}
+Build Time: ${BUILD_TIME}
+Build Tags: containers_image_openpgp
+EOF
+}
+
+# Main build process
+main() {
+    log "Starting build process for ${SERVICE_NAME}..."
+
+    check_requirements
+    setup_build_env
+    get_build_info
+
+    # Build for each platform
+    for platform in "${PLATFORMS[@]}"; do
+        log "Processing ${platform} platform..."
+        build_binary "$platform"
+        copy_additional_files "$platform"
+        log "${platform} build completed"
+        echo "----------------------------------------"
+    done
+
+    # Print completion message
+    log "Build completed successfully!"
+    log "Build outputs are in: ${OUTPUT_DIR}"
+
+    # Show version information
+    for platform in "${PLATFORMS[@]}"; do
+        log "Version information for ${platform}:"
+        cat "${OUTPUT_DIR}/${platform}/version.txt"
+        echo "----------------------------------------"
+    done
+}
+
+# Run the build
+main
