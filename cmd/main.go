@@ -62,7 +62,7 @@ func main() {
 	cleanupService := cleanup.NewCleanupService(repo, notifier, metricsCollector, log)
 
 	// Initialize handlers
-	handlers := initializeHandlers(log, Version, BuildTime, metricsCollector)
+	handlers := initializeHandlers(log, Version, BuildTime, metricsCollector, cleanupService)
 
 	// Setup router and HTTP server
 	app := router.NewFiberApp(log)
@@ -102,11 +102,14 @@ func logStartupInfo(log *zap.Logger, cfg *config.Config, version, buildTime stri
 		zap.Bool("log_compress", cfg.Logger.Compress))
 }
 
-func initializeHandlers(log *zap.Logger, version, buildTime string, metricsCollector metrics.MetricsCollector) *handlers.Handlers {
-	return handlers.NewHandlers(log, version, buildTime, metricsCollector)
+func initializeHandlers(log *zap.Logger,
+	version, buildTime string,
+	metricsCollector metrics.MetricsCollector,
+	cleanupUseCase cleanup.CleanupUseCase) *handlers.Handlers {
+	return handlers.NewHandlers(log, version, buildTime, metricsCollector, cleanupUseCase)
 }
 
-func setupCronJobs(ctx context.Context, cleanupService *cleanup.CleanupService, schedule string, log *zap.Logger) *cron.Cron {
+func setupCronJobs(ctx context.Context, cleanupUseCase cleanup.CleanupUseCase, schedule string, log *zap.Logger) *cron.Cron {
 	c := cron.New(cron.WithChain(
 		cron.SkipIfStillRunning(cron.DefaultLogger),
 		cron.Recover(cron.DefaultLogger),
@@ -116,7 +119,7 @@ func setupCronJobs(ctx context.Context, cleanupService *cleanup.CleanupService, 
 		jobCtx, cancel := context.WithTimeout(ctx, constants.CleanupTimeout)
 		defer cancel()
 
-		if err := cleanupService.Cleanup(jobCtx); err != nil {
+		if err := cleanupUseCase.Cleanup(jobCtx); err != nil {
 			log.Error("Cleanup job failed",
 				zap.Error(err),
 				zap.String("schedule", schedule))

@@ -129,4 +129,5 @@ func SetupRoutes(app *FiberApp, handlers *handlers.Handlers, metricsCollector me
 
 func setupAPIRoutes(router fiber.Router, handlers *handlers.Handlers) {
 	// Future API endpoints will go here
+	router.Post("/cleanup", middleware.TimeoutMiddleware(10*time.Second), handlers.Cleanup.TriggerCleanup)
 }
