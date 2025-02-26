@@ -14,6 +14,7 @@ type Config struct {
 	TelegramChatID   string
 	CleanupSchedule  string
 	HTTPPort         string
+	SQLiteDBPath     string // Thêm đường dẫn đến SQLite database
 
 	// Logger config
 	Logger logger.Config
@@ -29,6 +30,7 @@ func (c *Config) String() string {
 	sb.WriteString(fmt.Sprintf("TELEGRAM_CHAT_ID: %s\n", helper.MaskValue(c.TelegramChatID)))
 	sb.WriteString(fmt.Sprintf("CLEANUP_SCHEDULE: %s\n", c.CleanupSchedule))
 	sb.WriteString(fmt.Sprintf("HTTP_PORT: %s\n", c.HTTPPort))
+	sb.WriteString(fmt.Sprintf("SQLITE_DB_PATH: %s\n", c.SQLiteDBPath))
 	sb.WriteString("\nLogger Configuration:\n")
 	sb.WriteString("--------------------\n")
 	sb.WriteString(fmt.Sprintf("LOG_LEVEL: %s\n", c.Logger.Level))
@@ -48,6 +50,7 @@ func LoadConfig() (*Config, error) {
 	// Set defaults
 	viper.SetDefault("CLEANUP_SCHEDULE", "0 0 * * *")
 	viper.SetDefault("HTTP_PORT", "8080")
+	viper.SetDefault("SQLITE_DB_PATH", "/var/lib/image-cleanup/cleanup.db") // Mặc định cho SQLite database
 
 	// Logger defaults
 	viper.SetDefault("LOG_LEVEL", "info")
@@ -72,6 +75,7 @@ func LoadConfig() (*Config, error) {
 		TelegramChatID:   viper.GetString("TELEGRAM_CHAT_ID"),
 		CleanupSchedule:  viper.GetString("CLEANUP_SCHEDULE"),
 		HTTPPort:         viper.GetString("HTTP_PORT"),
+		SQLiteDBPath:     viper.GetString("SQLITE_DB_PATH"),
 		Logger: logger.Config{
 			Level:      viper.GetString("LOG_LEVEL"),
 			LogDir:     viper.GetString("LOG_DIR"),
@@ -81,6 +85,9 @@ func LoadConfig() (*Config, error) {
 			Compress:   viper.GetBool("LOG_COMPRESS"),
 		},
 	}
+
+	// Đảm bảo thư mục cho SQLite database tồn tại
+	helper.EnsureDirectoryExists(helper.GetParentDirectory(config.SQLiteDBPath))
 
 	return config, nil
 }
