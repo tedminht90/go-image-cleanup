@@ -9,6 +9,7 @@ SERVICE_DESC="Image Cleanup Service"
 BINARY_PATH="/usr/local/bin/${SERVICE_NAME}"
 CONFIG_DIR="/etc/${SERVICE_NAME}"
 LOG_DIR="/var/log/${SERVICE_NAME}"
+DATA_DIR="/var/lib/${SERVICE_NAME}"
 USER="root"
 GROUP="root"
 
@@ -66,6 +67,21 @@ if ! command -v crictl >/dev/null 2>&1; then
     exit 1
 fi
 
+# Check and install SQLite if needed
+log "Checking SQLite installation..."
+if ! command -v sqlite3 >/dev/null 2>&1; then
+    log "SQLite not found, installing..."
+    if [ "$PLATFORM" = "fedora" ]; then
+        yum install -y sqlite sqlite-devel
+    else
+        apt-get update
+        apt-get install -y sqlite3 libsqlite3-dev
+    fi
+    log "SQLite installed successfully"
+else
+    log "SQLite is already installed"
+fi
+
 # Stop existing services if running
 log "Stopping existing services if running..."
 systemctl stop "${SERVICE_NAME}" >/dev/null 2>&1 || true
@@ -81,6 +97,7 @@ sleep 2
 log "Creating directories..."
 mkdir -p "$CONFIG_DIR"
 mkdir -p "$LOG_DIR"
+mkdir -p "$DATA_DIR"
 
 # Install binary and scripts from correct platform directory
 log "Installing files from ${PLATFORM} build..."
@@ -98,6 +115,9 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 CLEANUP_SCHEDULE="0 0 * * *"
 HTTP_PORT=8080
+
+# Database configuration
+SQLITE_DB_PATH=${DATA_DIR}/cleanup.db
 
 # Logger configuration
 LOG_LEVEL=info
@@ -171,6 +191,7 @@ EOF
 log "Setting permissions..."
 chown -R ${USER}:${GROUP} "$CONFIG_DIR"
 chown -R ${USER}:${GROUP} "$LOG_DIR"
+chown -R ${USER}:${GROUP} "$DATA_DIR"
 chmod 600 "$CONFIG_DIR/.env"
 chmod 644 "/etc/systemd/system/${SERVICE_NAME}.service"
 chmod 644 "/etc/systemd/system/${SERVICE_NAME}-health.service"
@@ -219,3 +240,4 @@ log "1. Update configuration at: ${CONFIG_DIR}/.env"
 log "2. Verify logs at: ${LOG_DIR}"
 log "3. Check service health: curl http://localhost:8080/health"
 log "4. View logs: journalctl -u ${SERVICE_NAME} -f"
+log "5. SQLite database location: ${DATA_DIR}/cleanup.db"

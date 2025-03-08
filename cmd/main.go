@@ -11,10 +11,12 @@ import (
 
 	"go-image-cleanup/config"
 	"go-image-cleanup/internal/domain/metrics"
+	"go-image-cleanup/internal/domain/repositories"
 	"go-image-cleanup/internal/infrastructure/container"
 	loggerPkg "go-image-cleanup/internal/infrastructure/logger"
 	prometheusMetrics "go-image-cleanup/internal/infrastructure/metrics"
 	"go-image-cleanup/internal/infrastructure/notification"
+	repoImpl "go-image-cleanup/internal/infrastructure/repositories"
 	"go-image-cleanup/internal/interfaces/http/handlers"
 	"go-image-cleanup/internal/interfaces/http/router"
 	"go-image-cleanup/internal/usecases/cleanup"
@@ -58,8 +60,27 @@ func main() {
 	notifier := notification.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID, log)
 	metricsCollector := prometheusMetrics.NewPrometheusMetrics(log)
 
+	// Khai báo resultRepo với kiểu interface
+	var resultRepo repositories.CleanupResultRepository
+
+	// Khởi tạo SQLite repository
+	sqliteRepo, err := repoImpl.NewSQLiteCleanupResultRepository(cfg.SQLiteDBPath, log)
+	if err != nil {
+		log.Fatal("Failed to initialize SQLite repository", zap.Error(err))
+	}
+
+	// Gán instance cho interface
+	resultRepo = sqliteRepo
+
+	// Đóng kết nối khi app shutdown
+	defer func() {
+		if err := sqliteRepo.Close(); err != nil {
+			log.Error("Error closing SQLite connection", zap.Error(err))
+		}
+	}()
+
 	// Initialize services
-	cleanupService := cleanup.NewCleanupService(repo, notifier, metricsCollector, log)
+	cleanupService := cleanup.NewCleanupService(repo, resultRepo, notifier, metricsCollector, log)
 
 	// Initialize handlers
 	handlers := initializeHandlers(log, Version, BuildTime, metricsCollector, cleanupService)

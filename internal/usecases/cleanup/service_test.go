@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go-image-cleanup/internal/domain/models"
+	"go-image-cleanup/internal/domain/repositories"
 	"testing"
 	"time"
 
@@ -42,6 +43,48 @@ func (m *mockImageRepository) RemoveImage(ctx context.Context, imageID string) e
 	default:
 		return m.removeErr
 	}
+}
+
+// Mock cleanup result repository
+type mockCleanupResultRepository struct {
+	savedResults []repositories.CleanupResult
+}
+
+func (m *mockCleanupResultRepository) SaveResult(ctx context.Context, result repositories.CleanupResult) error {
+	m.savedResults = append(m.savedResults, result)
+	return nil
+}
+
+func (m *mockCleanupResultRepository) GetLatestResult(ctx context.Context) (*repositories.CleanupResult, error) {
+	if len(m.savedResults) == 0 {
+		return nil, fmt.Errorf("no cleanup results found")
+	}
+	// Return the most recent result
+	result := m.savedResults[len(m.savedResults)-1]
+	return &result, nil
+}
+
+func (m *mockCleanupResultRepository) GetResultByID(ctx context.Context, id string) (*repositories.CleanupResult, error) {
+	for _, result := range m.savedResults {
+		if result.ID == id {
+			return &result, nil
+		}
+	}
+	return nil, fmt.Errorf("result with ID %s not found", id)
+}
+
+func (m *mockCleanupResultRepository) GetResults(ctx context.Context, limit, offset int) ([]repositories.CleanupResult, error) {
+	total := len(m.savedResults)
+	if offset >= total {
+		return []repositories.CleanupResult{}, nil
+	}
+
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+
+	return m.savedResults[offset:end], nil
 }
 
 // Mock notifier
@@ -124,6 +167,7 @@ func TestCleanupService(t *testing.T) {
 		wantSkipped   int
 		wantErrors    int
 		wantNotified  bool
+		wantSaved     bool // Đã lưu kết quả vào repository chưa
 		timeout       time.Duration
 		cancelContext bool
 		sleepBefore   time.Duration // Add sleep to test timeout scenarios
@@ -140,6 +184,7 @@ func TestCleanupService(t *testing.T) {
 			wantSkipped:   1,
 			wantErrors:    0,
 			wantNotified:  true,
+			wantSaved:     true,
 			timeout:       5 * time.Second,
 			cancelContext: false,
 		},
@@ -153,6 +198,7 @@ func TestCleanupService(t *testing.T) {
 			removeErr:     nil,
 			wantRemoved:   0,
 			wantNotified:  false,
+			wantSaved:     false,
 			timeout:       5 * time.Second,
 			cancelContext: true,
 		},
@@ -166,6 +212,7 @@ func TestCleanupService(t *testing.T) {
 			removeErr:     nil,
 			wantRemoved:   0,
 			wantNotified:  false,
+			wantSaved:     false,
 			timeout:       100 * time.Millisecond,
 			sleepBefore:   200 * time.Millisecond, // Sleep longer than timeout
 			cancelContext: false,
@@ -190,11 +237,11 @@ func TestCleanupService(t *testing.T) {
 				removeErr:  tt.removeErr,
 			}
 			notifier := &mockNotifier{}
-
 			metrics := &mockMetricsCollector{}
+			resultRepo := &mockCleanupResultRepository{} // Thêm mock repository mới
 
 			// Create service
-			service := NewCleanupService(repo, notifier, metrics, logger)
+			service := NewCleanupService(repo, resultRepo, notifier, metrics, logger)
 
 			// If test requires sleep before cleanup
 			if tt.sleepBefore > 0 {
@@ -235,6 +282,14 @@ func TestCleanupService(t *testing.T) {
 			}
 			if !tt.wantNotified && len(notifier.messages) > 0 {
 				t.Error("unexpected notification was sent")
+			}
+
+			// Check if results were saved to repository
+			if tt.wantSaved && len(resultRepo.savedResults) == 0 {
+				t.Error("expected cleanup result to be saved to repository, but none was found")
+			}
+			if !tt.wantSaved && len(resultRepo.savedResults) > 0 {
+				t.Error("unexpected cleanup result was saved to repository")
 			}
 		})
 	}

@@ -23,6 +23,7 @@ var _ CleanupUseCase = (*CleanupService)(nil)
 
 type CleanupService struct {
 	repo       repositories.ImageRepository
+	resultRepo repositories.CleanupResultRepository
 	notifier   notification.Notifier
 	metrics    metrics.MetricsCollector
 	logger     *zap.Logger
@@ -32,18 +33,58 @@ type CleanupService struct {
 
 func NewCleanupService(
 	repo repositories.ImageRepository,
+	resultRepo repositories.CleanupResultRepository,
 	notifier notification.Notifier,
 	metrics metrics.MetricsCollector,
 	logger *zap.Logger,
 ) *CleanupService {
 	return &CleanupService{
 		repo:       repo,
+		resultRepo: resultRepo,
 		notifier:   notifier,
 		metrics:    metrics,
 		logger:     logger,
 		timeout:    5 * time.Minute, // Configurable timeout
 		workerPool: 5,               // Configurable worker pool size
 	}
+}
+
+// Thêm phương thức GetLastCleanupStats để implement interface
+func (s *CleanupService) GetLastCleanupStats() (*CleanupStats, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := s.resultRepo.GetLatestResult(ctx)
+
+	// Lấy thông tin hostname thay vì trả về chuỗi cố định
+	hostname, ips, hostErr := s.getHostInfo()
+	hostInfo := "Unknown host"
+	if hostErr == nil {
+		hostInfo = fmt.Sprintf("Host: %s\nIP(s): %s", hostname, ips)
+	}
+
+	if err != nil {
+		s.logger.Warn("Failed to get latest cleanup result", zap.Error(err))
+		return &CleanupStats{
+			HostInfo:   hostInfo,
+			StartTime:  time.Time{},
+			EndTime:    time.Time{},
+			Duration:   0,
+			TotalCount: 0,
+			Removed:    0,
+			Skipped:    0,
+		}, nil
+	}
+
+	return &CleanupStats{
+		HostInfo:   result.HostInfo,
+		StartTime:  result.StartTime,
+		EndTime:    result.EndTime,
+		Duration:   result.Duration,
+		TotalCount: result.TotalCount,
+		Removed:    result.Removed,
+		Skipped:    result.Skipped,
+	}, nil
 }
 
 func (s *CleanupService) removeImagesInParallel(ctx context.Context, images []models.Image, usedImages map[string]bool) (int, int) {
@@ -230,5 +271,21 @@ func (s *CleanupService) Cleanup(ctx context.Context) error {
 		zap.String("end_time", helper.FormatICT(endTime)),
 		zap.String("duration", duration.String()))
 
+	// Lưu kết quả vào repository
+	result := repositories.CleanupResult{
+		HostInfo:   hostInfo,
+		StartTime:  startTime,
+		EndTime:    endTime,
+		Duration:   duration,
+		TotalCount: stats.total,
+		Removed:    stats.removed,
+		Skipped:    stats.skipped,
+		CreatedAt:  time.Now(),
+	}
+
+	if err := s.resultRepo.SaveResult(ctx, result); err != nil {
+		s.logger.Error("Failed to save cleanup result", zap.Error(err))
+		// Không return error ở đây, cleanup vẫn thành công
+	}
 	return nil
 }
